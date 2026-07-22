@@ -7,6 +7,7 @@ services:
       - "20128:20128"
     volumes:
       - 9router-data:/app/data
+      - ./open-sse:/app/open-sse
     env_file:
       - .env
     environment:
