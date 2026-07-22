@@ -136,4 +136,33 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  it("multiple calls to the same tool name in different turns get unique stable IDs", () => {
+    const out = AG2O({
+      contents: [
+        { role: "model", parts: [{ functionCall: { name: "grep_search", args: { query: "hello" } } }] },
+        { role: "user", parts: [{ functionResponse: { name: "grep_search", response: { result: "res1" } } }] },
+        { role: "model", parts: [{ functionCall: { name: "grep_search", args: { query: "world" } } }] },
+        { role: "user", parts: [{ functionResponse: { name: "grep_search", response: { result: "res2" } } }] },
+      ],
+    });
+
+    const calls = out.messages.filter((m) => m.role === "assistant" && m.tool_calls);
+    const tools = out.messages.filter((m) => m.role === "tool");
+
+    expect(calls.length).toBe(2);
+    expect(tools.length).toBe(2);
+
+    const call1Id = calls[0].tool_calls[0].id;
+    const call2Id = calls[1].tool_calls[0].id;
+    const tool1Id = tools[0].tool_call_id;
+    const tool2Id = tools[1].tool_call_id;
+
+    // Check that tool call IDs are unique
+    expect(call1Id).not.toBe(call2Id);
+    
+    // Check that the tool response IDs match the corresponding tool call IDs
+    expect(tool1Id).toBe(call1Id);
+    expect(tool2Id).toBe(call2Id);
+  });
 });
