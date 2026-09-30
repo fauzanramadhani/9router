@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/models";
+import { getProviderConnectionById, getApiKeys } from "@/models";
 import { handleChat } from "@/sse/handlers/chat";
 
 export async function POST(request, { params }) {
@@ -10,8 +10,20 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    let internalKey = null;
+    try {
+      const keys = await getApiKeys();
+      internalKey = keys?.find((k) => k.isActive !== false)?.key || null;
+    } catch {}
+
+    const incomingAuth = request.headers.get("Authorization");
+
     const body = await request.json().catch(() => ({}));
-    const model = body.model || "cx/gpt-6-astra";
+    let model = body.model || "cx/gpt-6-astra";
+    if (!model.includes("/")) {
+      const prefix = connection.provider === "codex" ? "cx" : connection.provider;
+      model = `${prefix}/${model}`;
+    }
     const countNonStream = Math.min(Math.max(body.countNonStream ?? 3, 0), 10);
     const countStream = Math.min(Math.max(body.countStream ?? 3, 0), 10);
     const promptText = body.prompt || "Tes koneksi, balas: OK";
@@ -22,12 +34,20 @@ export async function POST(request, { params }) {
     // Helper to make internal chat request targeting this connection
     async function runTestIteration(isStream, iteration) {
       const startTime = Date.now();
+      const headers = {
+        "Content-Type": "application/json",
+        "x-connection-id": id,
+        "x-internal-diagnose": "true",
+      };
+      if (internalKey) {
+        headers["Authorization"] = `Bearer ${internalKey}`;
+      } else if (incomingAuth) {
+        headers["Authorization"] = incomingAuth;
+      }
+
       const mockReq = new Request("http://localhost:20128/v1/chat/completions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-connection-id": id
-        },
+        headers,
         body: JSON.stringify({
           model,
           stream: isStream,

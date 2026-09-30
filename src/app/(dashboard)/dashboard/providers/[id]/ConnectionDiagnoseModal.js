@@ -6,7 +6,8 @@ import { Button, Modal, Badge } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
 
 export default function ConnectionDiagnoseModal({ isOpen, onClose, connection, availableModels = [], onDisableModel }) {
-  const [selectedModel, setSelectedModel] = useState("cx/gpt-6-astra");
+  const initialModel = availableModels.length > 0 ? (availableModels[0].id || "cx/gpt-6-astra") : "cx/gpt-6-astra";
+  const [selectedModel, setSelectedModel] = useState(initialModel);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -62,13 +63,31 @@ export default function ConnectionDiagnoseModal({ isOpen, onClose, connection, a
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-b border-border pb-3">
           <div className="flex-1">
             <label className="text-[11px] font-medium text-text-muted block mb-1">{translate("Tested Model")}</label>
-            <input
-              type="text"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              placeholder="e.g. cx/gpt-6-astra"
-              className="w-full rounded-md border border-border bg-bg px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
-            />
+            {availableModels && availableModels.length > 0 ? (
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="w-full rounded-md border border-border bg-bg px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+              >
+                {availableModels.map((m) => {
+                  const mId = m.id || m.name;
+                  const mName = m.name || m.id;
+                  return (
+                    <option key={mId} value={mId}>
+                      {mName} ({mId})
+                    </option>
+                  );
+                })}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                placeholder="e.g. cx/gpt-6-astra"
+                className="w-full rounded-md border border-border bg-bg px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+              />
+            )}
           </div>
           <div className="sm:self-end">
             <Button
