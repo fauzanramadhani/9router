@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -23,6 +23,8 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
+import ConnectionModelsModal from "./ConnectionModelsModal";
+import ConnectionDiagnoseModal from "./ConnectionDiagnoseModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -55,6 +57,8 @@ export default function ProviderDetailPage() {
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
+  const [modelsModalConn, setModelsModalConn] = useState(null);
+  const [diagnoseModalConn, setDiagnoseModalConn] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [headerImgError, setHeaderImgError] = useState(false);
@@ -1040,6 +1044,8 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                onOpenModels={() => setModelsModalConn(conn)}
+                onOpenDiagnose={() => setDiagnoseModalConn(conn)}
                 autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
                   onToggle: (on) => handleAutoPingConnection(conn.id, on),
@@ -1331,6 +1337,49 @@ export default function ProviderDetailPage() {
       </div>
     );
   };
+
+  const providerModelsForModal = useMemo(() => {
+    const builtIn = Array.isArray(models) ? models : [];
+    const custom = Array.isArray(customModels)
+      ? customModels.filter(m => m.providerAlias === providerStorageAlias || m.provider === providerId || m.providerAlias === providerId)
+      : [];
+    const combined = [...builtIn, ...custom];
+
+    if (providerId === "codex") {
+      const codexDefaults = [
+        { id: "gpt-6-astra", name: "GPT 6.0 Astra" },
+        { id: "gpt-6-sol", name: "GPT 6.0 Sol" },
+        { id: "gpt-6-luna", name: "GPT 6.0 Luna" },
+        { id: "gpt-5.6-sol", name: "GPT 5.6 Sol" },
+        { id: "gpt-5.6-terra", name: "GPT 5.6 Terra" },
+        { id: "gpt-5.6-luna", name: "GPT 5.6 Luna" },
+        { id: "gpt-5.5", name: "GPT 5.5" },
+        { id: "gpt-5.4", name: "GPT 5.4" },
+        { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
+        { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark" },
+        { id: "codex-auto-review", name: "Codex Auto Review" },
+        { id: "gpt-image-2.5", name: "GPT Image 2.5" },
+        { id: "gpt-image-2", name: "GPT Image 2" },
+        { id: "gpt-image-1.5", name: "GPT Image 1.5" },
+      ];
+      codexDefaults.forEach(def => {
+        if (!combined.some(m => (m.id || m) === def.id)) {
+          combined.push(def);
+        }
+      });
+    }
+
+    const seen = new Set();
+    const result = [];
+    for (const m of combined) {
+      const id = typeof m === "string" ? m : (m.id || m.model);
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        result.push(m);
+      }
+    }
+    return result;
+  }, [models, customModels, providerId, providerStorageAlias]);
 
   if (loading) {
     return (
@@ -1960,6 +2009,54 @@ export default function ProviderDetailPage() {
         message={confirmState?.message}
         variant="danger"
       />
+
+      {/* Per-Account Models Configuration Modal */}
+      {modelsModalConn && (
+        <ConnectionModelsModal
+          isOpen={!!modelsModalConn}
+          connection={modelsModalConn}
+          availableModels={providerModelsForModal}
+          onSave={async (connectionId, disabledModels) => {
+            try {
+              const res = await fetch(`/api/providers/${connectionId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ disabledModels }),
+              });
+              if (res.ok) {
+                setConnections(prev => prev.map(c => c.id === connectionId ? { ...c, disabledModels } : c));
+              }
+            } catch (err) {
+              console.error("Failed to update disabled models:", err);
+            }
+          }}
+          onClose={() => setModelsModalConn(null)}
+        />
+      )}
+
+      {/* Connection Diagnostic Modal */}
+      {diagnoseModalConn && (
+        <ConnectionDiagnoseModal
+          isOpen={!!diagnoseModalConn}
+          connection={diagnoseModalConn}
+          availableModels={providerModelsForModal}
+          onDisableModel={async (connectionId, disabledModels) => {
+            try {
+              const res = await fetch(`/api/providers/${connectionId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ disabledModels }),
+              });
+              if (res.ok) {
+                setConnections(prev => prev.map(c => c.id === connectionId ? { ...c, disabledModels } : c));
+              }
+            } catch (err) {
+              console.error("Failed to update disabled models:", err);
+            }
+          }}
+          onClose={() => setDiagnoseModalConn(null)}
+        />
+      )}
     </div>
   );
 }

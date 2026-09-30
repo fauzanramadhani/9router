@@ -19,6 +19,28 @@ function githubMonthlyResetMs(status, errorText, provider) {
 }
 
 /**
+ * Check if a model is explicitly disabled for a connection
+ */
+export function isConnectionModelDisabled(conn, model, providerId = null) {
+  if (!conn || !model) return false;
+  const disabled = Array.isArray(conn.disabledModels) ? conn.disabledModels : [];
+  if (disabled.length === 0) return false;
+
+  const target = String(model).toLowerCase();
+  const rawTarget = target.includes("/") ? target.split("/").pop() : target;
+  const prefixedTarget = providerId ? `${providerId}/${rawTarget}`.toLowerCase() : target;
+
+  for (const pattern of disabled) {
+    if (!pattern) continue;
+    const p = String(pattern).toLowerCase().trim();
+    if (p === target || p === rawTarget || p === prefixedTarget) return true;
+    if (p.endsWith("*") && (target.startsWith(p.slice(0, -1)) || rawTarget.startsWith(p.slice(0, -1)))) return true;
+    if (rawTarget.startsWith(p) || target.startsWith(p)) return true;
+  }
+  return false;
+}
+
+/**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
  * @param {string} provider - Provider name
@@ -81,10 +103,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
 
-    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
+    // Filter out model-locked, excluded, Antigravity quota-exhausted, and per-account disabled connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (isConnectionModelDisabled(c, model, providerId)) return false;
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {
         const quota = antigravityQuotaCache.get(c.id)?.[model];
@@ -266,14 +289,29 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
-  await updateProviderConnection(connectionId, {
+  const updates = {
     ...lockUpdate,
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
-  });
+  };
+
+  // Self-Healing Circuit Breaker: Auto-disable model for this account if upstream rejected with 400 "not supported"
+  const lowerErr = (typeof errorText === "string" ? errorText : JSON.stringify(errorText || "")).toLowerCase();
+  const isModelNotSupported = status === 400 && (lowerErr.includes("not supported") || lowerErr.includes("model is not supported"));
+  if (isModelNotSupported && model) {
+    const rawModel = model.includes("/") ? model.split("/").pop() : model;
+    const currentDisabled = Array.isArray(conn?.disabledModels) ? conn.disabledModels : [];
+    if (!currentDisabled.includes(rawModel) && !currentDisabled.includes(model)) {
+      updates.disabledModels = [...currentDisabled, rawModel];
+      const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+      log.warn("AUTH", `${connName} auto-disabled model ${rawModel} due to upstream 400 not supported`);
+    }
+  }
+
+  await updateProviderConnection(connectionId, updates);
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);

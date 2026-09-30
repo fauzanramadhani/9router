@@ -662,7 +662,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Error events from Responses API (e.g. model_not_found)
+  // Error events from Responses API (e.g. model_not_found, policy violation)
   if (eventType === "error" || eventType === "response.failed") {
     // Avoid emitting duplicate errors (error + response.failed arrive back-to-back)
     if (state.finishReasonSent) return null;
@@ -671,12 +671,13 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     if (error) {
       state.error = error;
       state.finishReasonSent = true;
+      const isPolicyViolation = typeof error.message === "string" && (error.message.includes("usage policy") || error.message.includes("violating"));
 
       // Surface the error as an OpenAI-compatible error chunk
       return buildChunk(
         { id: state.chatId || `chatcmpl-${Date.now()}`, created: state.created || Math.floor(Date.now() / 1000), model: state.model || MODEL_FALLBACK },
         { content: `[Error] ${error.message || JSON.stringify(error)}` },
-        OPENAI_FINISH.STOP
+        isPolicyViolation ? OPENAI_FINISH.CONTENT_FILTER : "error"
       );
     }
     return null;

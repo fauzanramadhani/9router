@@ -201,6 +201,20 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+
+      // Check if upstream stream failed or produced empty/error output (Skenario B)
+      const isFailedStream = jsonResponse.status === "failed" || !jsonResponse.output || jsonResponse.output.length === 0;
+      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const isPolicyOrErrorText = typeof textContent === "string" && (textContent.includes("[Error]") || textContent.includes("usage policy"));
+
+      if (isFailedStream || (textContent === "" && (jsonResponse.usage?.output_tokens || 0) === 0) || isPolicyOrErrorText) {
+        const errMsg = jsonResponse.error?.message || (isPolicyOrErrorText ? textContent : "Upstream stream failed (finish_reason: failed)");
+        if (log?.errorLine) {
+          log.errorLine(reqTag, "✗", `STREAM_FAILED · ${provider}/${model} · ${errMsg}`);
+        }
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+      }
+
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -213,7 +227,6 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const inTokensForLog = (usage.input_tokens || 0)
         + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
         + (usage.cache_creation_input_tokens || 0);
-      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
