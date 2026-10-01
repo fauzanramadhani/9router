@@ -99,6 +99,48 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Direct connection binding for internal diagnose testing:
+    // Diagnoses the exact connection without filtering by active lock or disabledModels,
+    // and never falls through to random fallback accounts.
+    if (options?.isInternalDiagnose && preferredConnectionId) {
+      let targetConn = connections.find(c => c.id === preferredConnectionId);
+      if (!targetConn) {
+        const allConns = await getProviderConnections({ provider: providerId });
+        targetConn = allConns.find(c => c.id === preferredConnectionId);
+      }
+      if (!targetConn) {
+        log.warn("AUTH", `${provider} | diagnose target connection ${preferredConnectionId} not found`);
+        return null;
+      }
+      log.info("AUTH", `${provider} | diagnose pinned directly to ${targetConn.id?.slice(0, 8)} (${targetConn.displayName || targetConn.name || targetConn.email || "unnamed"})`);
+      const resolvedProxy = await resolveConnectionProxyConfig(targetConn.providerSpecificData || {});
+      return {
+        authType: targetConn.authType,
+        apiKey: targetConn.apiKey,
+        accessToken: targetConn.accessToken,
+        refreshToken: targetConn.refreshToken,
+        idToken: targetConn.idToken,
+        expiresAt: targetConn.expiresAt,
+        expiresIn: targetConn.expiresIn,
+        lastRefreshAt: targetConn.lastRefreshAt,
+        projectId: targetConn.projectId,
+        connectionName: targetConn.displayName || targetConn.name || targetConn.email || targetConn.id,
+        copilotToken: targetConn.providerSpecificData?.copilotToken,
+        providerSpecificData: {
+          ...(targetConn.providerSpecificData || {}),
+          connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
+          connectionProxyUrl: resolvedProxy.connectionProxyUrl,
+          connectionNoProxy: resolvedProxy.connectionNoProxy,
+          connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
+          vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+        },
+        connectionId: targetConn.id,
+        testStatus: targetConn.testStatus,
+        lastError: targetConn.lastError,
+        _connection: targetConn
+      };
+    }
+
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
@@ -290,7 +332,6 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   const updates = {
-    ...lockUpdate,
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
@@ -298,17 +339,29 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     backoffLevel: newBackoffLevel ?? backoffLevel
   };
 
-  // Self-Healing Circuit Breaker: Auto-disable model for this account if upstream rejected with 400 "not supported"
+  // Self-Healing Circuit Breaker: Auto-disable model for this account ONLY for provider "codex" and ONLY when upstream error is "model is not supported"
+  // Permanent without cooldown until manually enabled by admin.
+  // For all other errors on codex (and other providers), use standard temporary cooldown (lockUpdate) to trigger rotation.
+  const resolvedProvider = resolveProviderId(provider || conn?.provider);
+  const isCodex = resolvedProvider === "codex";
   const lowerErr = (typeof errorText === "string" ? errorText : JSON.stringify(errorText || "")).toLowerCase();
-  const isModelNotSupported = status === 400 && (lowerErr.includes("not supported") || lowerErr.includes("model is not supported"));
-  if (isModelNotSupported && model) {
+  const isModelNotSupported = Number(status) === 400 && (
+    lowerErr.includes("model is not supported") ||
+    lowerErr.includes("model_not_supported") ||
+    (lowerErr.includes("model") && lowerErr.includes("not supported"))
+  );
+
+  if (isCodex && isModelNotSupported && model) {
     const rawModel = model.includes("/") ? model.split("/").pop() : model;
     const currentDisabled = Array.isArray(conn?.disabledModels) ? conn.disabledModels : [];
     if (!currentDisabled.includes(rawModel) && !currentDisabled.includes(model)) {
       updates.disabledModels = [...currentDisabled, rawModel];
       const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-      log.warn("AUTH", `${connName} auto-disabled model ${rawModel} due to upstream 400 not supported`);
+      log.warn("AUTH", `${connName} auto-disabled model ${rawModel} permanently (model not supported)`);
     }
+  } else {
+    // Default 9router cooldown behavior: temporary model lock to trigger account rotation
+    Object.assign(updates, lockUpdate);
   }
 
   await updateProviderConnection(connectionId, updates);

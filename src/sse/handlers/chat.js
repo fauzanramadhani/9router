@@ -234,11 +234,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastHeaders = null;
 
   const preferredConnectionId = request?.headers?.get?.("x-connection-id") || null;
+  const isInternalDiagnose = request?.headers?.get?.("x-internal-diagnose") === "true";
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, isInternalDiagnose });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if (isInternalDiagnose) {
+        log.warn("DIAGNOSE", `[Diagnose] Connection ${preferredConnectionId} unavailable or not found`);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, `Connection ${preferredConnectionId} unavailable or not found`);
+      }
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -312,6 +317,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    // For internal diagnosis tests, do NOT fallback to other accounts!
+    // Return the diagnosed account's failure response directly so diagnosis reports its real status.
+    if (isInternalDiagnose) {
+      log.warn("DIAGNOSE", `[Diagnose] ACC:${credentials.connectionName} status=${result.status} error=${result.error?.slice(0, 100)}`);
+      return result.response || errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Upstream error");
+    }
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
