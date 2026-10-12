@@ -17,27 +17,61 @@ export default function ConnectionModelsModal({ isOpen, onClose, connection, ava
     }
   }, [isOpen, connection]);
 
+  const allModels = useMemo(() => {
+    const list = [...availableModels];
+    const existingRawIds = new Set(
+      list.map(m => {
+        const id = typeof m === "string" ? m : (m.id || m.model || "");
+        return id.includes("/") ? id.split("/").pop() : id;
+      }).filter(Boolean)
+    );
+
+    const disabledSources = [
+      ...(Array.isArray(connection?.disabledModels) ? connection.disabledModels : []),
+      ...disabledList
+    ];
+
+    for (const d of disabledSources) {
+      if (!d) continue;
+      const rawId = d.includes("/") ? d.split("/").pop() : d;
+      if (rawId && !existingRawIds.has(rawId)) {
+        existingRawIds.add(rawId);
+        list.push({ id: rawId, name: rawId, isAutoDisabled: true });
+      }
+    }
+    return list;
+  }, [availableModels, connection?.disabledModels, disabledList]);
+
   const filteredModels = useMemo(() => {
-    if (!search.trim()) return availableModels;
+    if (!search.trim()) return allModels;
     const q = search.toLowerCase();
-    return availableModels.filter(m => {
+    return allModels.filter(m => {
       const id = typeof m === "string" ? m : (m.id || m.model || "");
       const name = typeof m === "object" ? (m.name || "") : "";
       return id.toLowerCase().includes(q) || name.toLowerCase().includes(q);
     });
-  }, [availableModels, search]);
+  }, [allModels, search]);
 
   const isModelDisabled = (modelId) => {
     const rawId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
-    return disabledList.includes(modelId) || disabledList.includes(rawId);
+    return disabledList.some(x => {
+      const rawX = x.includes("/") ? x.split("/").pop() : x;
+      return rawX === rawId || x === modelId;
+    });
   };
 
   const toggleModel = (modelId) => {
     const rawId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
     setDisabledList(prev => {
-      const exists = prev.includes(modelId) || prev.includes(rawId);
+      const exists = prev.some(x => {
+        const rawX = x.includes("/") ? x.split("/").pop() : x;
+        return rawX === rawId || x === modelId;
+      });
       if (exists) {
-        return prev.filter(x => x !== modelId && x !== rawId);
+        return prev.filter(x => {
+          const rawX = x.includes("/") ? x.split("/").pop() : x;
+          return rawX !== rawId && x !== modelId;
+        });
       } else {
         return [...prev, rawId];
       }
@@ -49,16 +83,19 @@ export default function ConnectionModelsModal({ isOpen, onClose, connection, ava
   };
 
   const handleDisableGpt6 = () => {
-    const gpt6Models = availableModels
+    const gpt6Models = allModels
       .map(m => typeof m === "string" ? m : (m.id || m.model || ""))
       .filter(id => id.toLowerCase().includes("gpt-6"))
       .map(id => id.includes("/") ? id.split("/").pop() : id);
 
-    setDisabledList(prev => [...new Set([...prev, ...gpt6Models, "gpt-6-astra", "cx/gpt-6-astra"])]);
+    setDisabledList(prev => {
+      const prevRaws = prev.map(x => x.includes("/") ? x.split("/").pop() : x);
+      return Array.from(new Set([...prevRaws, ...gpt6Models, "gpt-6-astra"]));
+    });
   };
 
   const distinctDisabledCount = useMemo(() => {
-    const unique = new Set(disabledList.map(m => m.includes("/") ? m.split("/").pop() : m));
+    const unique = new Set(disabledList.map(m => m.includes("/") ? m.split("/").pop() : m).filter(Boolean));
     return unique.size;
   }, [disabledList]);
 
@@ -134,9 +171,16 @@ export default function ConnectionModelsModal({ isOpen, onClose, connection, ava
                   }`}
                 >
                   <div className="flex flex-col min-w-0 pr-3">
-                    <span className="truncate text-sm font-medium text-text-main">
-                      {modelName}
-                    </span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="truncate text-sm font-medium text-text-main">
+                        {modelName}
+                      </span>
+                      {m.isAutoDisabled && (
+                        <span className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500">
+                          {translate("Custom / Auto-disabled")}
+                        </span>
+                      )}
+                    </div>
                     <span className="truncate text-xs font-mono text-text-muted">
                       {modelId}
                     </span>

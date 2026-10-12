@@ -46,8 +46,10 @@ export default function ConnectionDiagnoseModal({ isOpen, onClose, connection, a
   const handleApplyDisable = async () => {
     if (!result?.model) return;
     const rawModel = result.model.includes("/") ? result.model.split("/").pop() : result.model;
-    const current = Array.isArray(connection?.disabledModels) ? connection.disabledModels : [];
-    const updated = [...new Set([...current, rawModel, result.model])];
+    const current = Array.isArray(connection?.disabledModels)
+      ? connection.disabledModels.map((m) => (m.includes("/") ? m.split("/").pop() : m))
+      : [];
+    const updated = Array.from(new Set([...current, rawModel]));
     await onDisableModel(connection.id, updated);
     onClose();
   };

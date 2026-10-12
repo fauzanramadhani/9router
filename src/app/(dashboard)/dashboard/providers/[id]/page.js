@@ -25,6 +25,7 @@ import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 import ConnectionModelsModal from "./ConnectionModelsModal";
 import ConnectionDiagnoseModal from "./ConnectionDiagnoseModal";
+import CustomConfigCard from "./CustomConfigCard";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -1347,6 +1348,7 @@ export default function ProviderDetailPage() {
 
     if (providerId === "codex") {
       const codexDefaults = [
+        { id: "gpt-6.1-sol", name: "GPT 6.1 Sol" },
         { id: "gpt-6-astra", name: "GPT 6.0 Astra" },
         { id: "gpt-6-sol", name: "GPT 6.0 Sol" },
         { id: "gpt-6-luna", name: "GPT 6.0 Luna" },
@@ -1791,6 +1793,9 @@ export default function ProviderDetailPage() {
           )}
         </Card>
       )}
+
+      {/* Per-provider user overrides (custom headers / connect timeout) */}
+      <CustomConfigCard providerId={providerId} />
 
       {/* Models */}
       <Card>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
@@ -112,9 +112,18 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     };
   }, [modelLockUntil]);
 
-  // Determine effective status (override unavailable if cooldown expired)
+  const distinctDisabledModels = useMemo(() => {
+    if (!Array.isArray(connection.disabledModels)) return [];
+    const unique = new Set(
+      connection.disabledModels
+        .map((m) => (typeof m === "string" && m.includes("/") ? m.split("/").pop() : m))
+        .filter(Boolean)
+    );
+    return Array.from(unique);
+  }, [connection.disabledModels]);
+
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired u2192 treat as active
+    ? "active"  // Cooldown expired → treat as active
     : connection.testStatus;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
@@ -176,10 +185,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 Proxy
               </Badge>
             )}
-            {connection.disabledModels && connection.disabledModels.length > 0 && (
-              <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500" title={`Disabled models: ${connection.disabledModels.join(", ")}`}>
+            {distinctDisabledModels.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500" title={`Disabled models: ${distinctDisabledModels.join(", ")}`}>
                 <span className="material-symbols-outlined text-[12px]">tune</span>
-                {connection.disabledModels.length} {translate("models off")}
+                {distinctDisabledModels.length} {translate("models off")}
               </span>
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
