@@ -59,7 +59,8 @@ const COOLDOWN = {
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
   { provider: "codex", text: "model is not supported when using codex with a chatgpt account", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
-  { text: "not supported",            cooldownMs: COOLDOWN.long },
+  { text: "model is not supported",   cooldownMs: COOLDOWN.long },
+  { text: "model_not_supported",      cooldownMs: COOLDOWN.long },
   { text: "usage policy",             cooldownMs: COOLDOWN.long },
   // Intl gateway blocks affect the account/IP, so let the connection back off.
   { provider: "codebuddy-intl", text: "request illegal", backoff: true },

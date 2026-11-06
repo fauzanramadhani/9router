@@ -31,6 +31,12 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  // Request-scoped parameter/argument validation errors: a 400 about thinking level or invalid arguments
+  // is caused by request arguments, not credential health. Never lock the account.
+  if (status === 400 && (lowerError.includes("thinking level") || lowerError.includes("thinking_level") || lowerError.includes("invalid_argument"))) {
+    return { shouldFallback: false, cooldownMs: 0, requestScoped: true };
+  }
+
   for (const rule of ERROR_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     // Text-based rule: match substring in error message

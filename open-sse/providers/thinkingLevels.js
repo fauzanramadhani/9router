@@ -12,7 +12,7 @@ const L = {
   openai: ["none", "minimal", "low", "medium", "high", "xhigh"],    // GPT-5.x / o-series (no "max")
   levelMax: ["none", "low", "medium", "high", "max"],               // kimi
   budgetX: ["none", "low", "medium", "high", "xhigh", "max"],       // claude-budget, claude-adaptive
-  gemini: ["minimal", "low", "medium", "high"],                     // gemini-3 thinkingLevel (no disable)
+  gemini: ["low", "medium", "high"],                                // gemini-3/4 thinkingLevel (no disable, low is floor)
   hiMax: ["none", "high", "max"],                                   // deepseek (low/med→high, xhigh→max)
 };
 
@@ -41,8 +41,11 @@ const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
+  // Gemini 3.x and 4 (Argon) reject "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
+  { pattern: "*gemini-3*", levels: ["low", "medium", "high"] },
+  { pattern: "*gemini-pro-agent*", levels: ["low", "medium", "high"] },
+  { provider: "antigravity", pattern: "*gemini*", levels: ["low", "medium", "high"] },
   { pattern: "*claude*4.6*", levels: CLAUDE_NO_XHIGH },
   { pattern: "*claude*4-6*", levels: CLAUDE_NO_XHIGH },
   { provider: "codex", pattern: "*gpt-6*", levels: CODEX_GPT_5_6_LEVELS },
