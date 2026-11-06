@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useLayoutEffect } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { Globe, X } from "lucide-react";
@@ -18,10 +18,6 @@ export default function LanguageSwitcher({ currentLang }) {
   const router = useRouter();
   const pathname = usePathname();
   const current = getLanguage(currentLang);
-
-  useLayoutEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -90,7 +86,7 @@ export default function LanguageSwitcher({ currentLang }) {
         <span className="sm:hidden">{current.flag}</span>
       </button>
 
-      {open && createPortal(modal, document.body)}
+      {open && typeof document !== "undefined" && createPortal(modal, document.body)}
     </>
   );
 }
