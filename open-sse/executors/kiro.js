@@ -224,7 +224,13 @@ function inspectSSEChunk(chunk, state) {
  */
 export class KiroExecutor extends BaseExecutor {
   constructor() {
-    super("kiro", PROVIDERS.kiro);
+    super("kiro", {
+      ...PROVIDERS.kiro,
+      retry: {
+        ...PROVIDERS.kiro?.retry,
+        429: { attempts: 2, delayMs: 2000 },
+      },
+    });
   }
 
   buildHeaders(credentials, stream = true, url = "") {
@@ -322,6 +328,14 @@ export class KiroExecutor extends BaseExecutor {
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
     const q = amazon.filter((u) => u.includes("://q."));
     const remaining = amazon.filter((u) => !u.includes("://q."));
+
+    // Imported accounts (from Kiro IDE desktop) and social logins authenticate
+    // directly against Kiro's runtime gateway (runtime.*.kiro.dev). Trying Amazon Q
+    // or CodeWhisperer first wastes time and trips 429 USER_REQUEST_RATE_EXCEEDED.
+    if (authMethod === "imported" || authMethod === "google" || authMethod === "github") {
+      return [...others, ...q, ...remaining];
+    }
+
     return q.length > 0
       ? [...q, ...remaining, ...others]
       : [...amazon, ...others];

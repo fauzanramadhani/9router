@@ -36,6 +36,19 @@ describe("Kiro auth-aware endpoint routing", () => {
     ]);
   });
 
+  it("routes imported desktop accounts and social logins through kiro.dev first", () => {
+    expect(executor.getOrderedBaseUrls(credentials("imported"))).toEqual([
+      RUNTIME,
+      Q,
+      CODEWHISPERER,
+    ]);
+    expect(executor.getOrderedBaseUrls(credentials("google"))).toEqual([
+      RUNTIME,
+      Q,
+      CODEWHISPERER,
+    ]);
+  });
+
   it("regionalizes a covered region for IDC with Q first", () => {
     expect(executor.getOrderedBaseUrls(credentials("idc", "eu-central-1"))).toEqual([
       "https://q.eu-central-1.amazonaws.com/generateAssistantResponse",
