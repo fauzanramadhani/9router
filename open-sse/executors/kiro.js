@@ -15,6 +15,84 @@ import { crc32, parseEventFrame } from "../utils/awsEventStream.js";
 import { buildKiroIdentityHeaders } from "../shared/kiroIdentity.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+const KIRO_ACCOUNT_QUEUES = new Map();
+const KIRO_ACCOUNT_LAST_COMPLETED = new Map();
+const isTestEnv = process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+const DEFAULT_KIRO_ACCOUNT_PACING_MS = isTestEnv ? 0 : 1500;
+
+function sleepWithAbort(ms, signal) {
+  if (ms <= 0) return Promise.resolve();
+  if (signal?.aborted) return Promise.reject(makeAbortError(signal.reason));
+  return new Promise((resolve, reject) => {
+    let timer;
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(makeAbortError(signal.reason));
+    };
+    timer = setTimeout(() => {
+      signal?.removeEventListener?.("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
+}
+
+function resolveKiroAccountKey(credentials) {
+  return credentials?.connectionId
+    || credentials?.providerSpecificData?.clientId
+    || credentials?.apiKey
+    || credentials?.accessToken
+    || "default";
+}
+
+async function acquireKiroAccountLock(accountKey, pacingMs, signal) {
+  const previous = KIRO_ACCOUNT_QUEUES.get(accountKey) || Promise.resolve();
+
+  let releaseNext;
+  const current = new Promise((resolve) => {
+    releaseNext = resolve;
+  });
+
+  const queueEntry = previous.catch(() => {}).then(() => current);
+  KIRO_ACCOUNT_QUEUES.set(accountKey, queueEntry);
+
+  try {
+    await previous.catch(() => {});
+    if (signal?.aborted) throw makeAbortError(signal.reason);
+
+    const lastCompleted = KIRO_ACCOUNT_LAST_COMPLETED.get(accountKey) || 0;
+    const elapsed = Date.now() - lastCompleted;
+    const waitMs = Math.max(0, pacingMs - elapsed);
+    if (waitMs > 0) {
+      await sleepWithAbort(waitMs, signal);
+    }
+  } catch (err) {
+    releaseNext();
+    if (KIRO_ACCOUNT_QUEUES.get(accountKey) === queueEntry) {
+      KIRO_ACCOUNT_QUEUES.delete(accountKey);
+    }
+    throw err;
+  }
+
+  let released = false;
+  const release = (extraCooldownMs = 0) => {
+    if (released) return;
+    released = true;
+    KIRO_ACCOUNT_LAST_COMPLETED.set(accountKey, Date.now() + extraCooldownMs);
+    releaseNext();
+    if (KIRO_ACCOUNT_QUEUES.get(accountKey) === queueEntry) {
+      KIRO_ACCOUNT_QUEUES.delete(accountKey);
+    }
+  };
+
+  const safetyTimer = setTimeout(release, 120_000);
+  if (safetyTimer.unref) safetyTimer.unref();
+
+  return (extraCooldownMs = 0) => {
+    clearTimeout(safetyTimer);
+    release(extraCooldownMs);
+  };
+}
 // Regions per service host; a region outside the set is never spliced into the hostname.
 const KIRO_SERVICE_REGIONS = {
   q: new Set(["us-east-1", "eu-central-1"]),
@@ -381,18 +459,26 @@ export class KiroExecutor extends BaseExecutor {
    * classify the status, and trigger account fallback/cooldown.
    */
   async execute(args) {
-    const result = await super.execute(args);
-    if (result?.response?.ok) {
-      // KIRO_INTEGRITY_GATE=off streams through, forfeiting the tool-call repair retry.
-      if (process.env.KIRO_INTEGRITY_GATE === "off") {
-        result.response = this.transformEventStreamToSSE(result.response, args.model, {
-          toolSpecs: args.body?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools || []
-        });
-      } else {
-        this.attachIntegrityGate(result, args);
+    const accountKey = resolveKiroAccountKey(args.credentials);
+    const pacingMs = envPositiveInt("KIRO_ACCOUNT_PACING_MS", DEFAULT_KIRO_ACCOUNT_PACING_MS);
+    const releaseLock = await acquireKiroAccountLock(accountKey, pacingMs, args.signal);
+
+    try {
+      const result = await super.execute(args);
+      if (result?.response?.ok) {
+        // KIRO_INTEGRITY_GATE=off streams through, forfeiting the tool-call repair retry.
+        if (process.env.KIRO_INTEGRITY_GATE === "off") {
+          result.response = this.transformEventStreamToSSE(result.response, args.model, {
+            toolSpecs: args.body?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools || []
+          });
+        } else {
+          this.attachIntegrityGate(result, args);
+        }
       }
+      return result;
+    } finally {
+      releaseLock();
     }
-    return result;
   }
 
   attachIntegrityGate(result, args) {
