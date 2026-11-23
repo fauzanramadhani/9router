@@ -18,7 +18,7 @@ const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_ACCOUNT_QUEUES = new Map();
 const KIRO_ACCOUNT_LAST_COMPLETED = new Map();
 const isTestEnv = process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
-const DEFAULT_KIRO_ACCOUNT_PACING_MS = isTestEnv ? 0 : 1500;
+const DEFAULT_KIRO_ACCOUNT_PACING_MS = isTestEnv ? 0 : 12000;
 
 function sleepWithAbort(ms, signal) {
   if (ms <= 0) return Promise.resolve();
@@ -306,9 +306,17 @@ export class KiroExecutor extends BaseExecutor {
       ...PROVIDERS.kiro,
       retry: {
         ...PROVIDERS.kiro?.retry,
-        429: { attempts: 3, delayMs: 2500 },
+        429: { attempts: 2, delayMs: 15000 },
       },
     });
+  }
+
+  async computeRetryDelay(response, attempt, delayMs) {
+    if (response?.status === 429) {
+      // Exponential backoff for Kiro rate limits: attempt 1: 15s, attempt 2: 20s
+      return Math.min(25000, 10000 + attempt * 5000);
+    }
+    return delayMs;
   }
 
   buildHeaders(credentials, stream = true, url = "") {
@@ -471,17 +479,75 @@ export class KiroExecutor extends BaseExecutor {
           result.response = this.transformEventStreamToSSE(result.response, args.model, {
             toolSpecs: args.body?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools || []
           });
+          this.attachStreamCompletion(result, releaseLock);
         } else {
-          this.attachIntegrityGate(result, args);
+          this.attachIntegrityGate(result, args, releaseLock);
         }
+        return result;
       }
+
+      // Upstream returned non-OK (e.g. 429). Release lock now with extra cooldown if throttled.
+      const extraCooldown = result?.response?.status === 429 ? 15000 : 0;
+      releaseLock(extraCooldown);
       return result;
-    } finally {
-      releaseLock();
+    } catch (err) {
+      releaseLock(15000);
+      throw err;
     }
   }
 
-  attachIntegrityGate(result, args) {
+  attachStreamCompletion(result, releaseLock) {
+    if (!result?.response?.body) {
+      releaseLock();
+      return;
+    }
+    const originalBody = result.response.body;
+    const reader = originalBody.getReader();
+    let released = false;
+    const releaseOnce = () => {
+      if (released) return;
+      released = true;
+      releaseLock();
+    };
+
+    const readTimeout = setTimeout(releaseOnce, isTestEnv ? 500 : 5000);
+    if (readTimeout.unref) readTimeout.unref();
+
+    const wrappedStream = new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            clearTimeout(readTimeout);
+            controller.close();
+            releaseOnce();
+          } else {
+            controller.enqueue(value);
+          }
+        } catch (err) {
+          clearTimeout(readTimeout);
+          controller.error(err);
+          releaseOnce();
+        }
+      },
+      async cancel(reason) {
+        clearTimeout(readTimeout);
+        try {
+          await reader.cancel(reason);
+        } finally {
+          releaseOnce();
+        }
+      }
+    });
+
+    result.response = new Response(wrappedStream, {
+      status: result.response.status,
+      statusText: result.response.statusText,
+      headers: result.response.headers
+    });
+  }
+
+  attachIntegrityGate(result, args, releaseLock = null) {
     const abortController = new AbortController();
     const maxBytes = envPositiveInt("KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES", KIRO_REPAIR_BUFFER_MAX_BYTES);
     const legacyTimeout = envPositiveInt("KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS", STREAM_FIRST_CHUNK_TIMEOUT_MS);
@@ -532,12 +598,14 @@ export class KiroExecutor extends BaseExecutor {
           open = false;
           clearInterval(heartbeatTimer);
           args.signal?.removeEventListener?.("abort", forwardAbort);
+          releaseLock?.();
         }
       },
       cancel(reason) {
         open = false;
         clearInterval(heartbeatTimer);
         abortController.abort(reason || "client cancelled");
+        releaseLock?.();
       }
     });
 
