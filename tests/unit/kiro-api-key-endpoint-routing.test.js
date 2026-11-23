@@ -36,17 +36,15 @@ describe("Kiro auth-aware endpoint routing", () => {
     ]);
   });
 
-  it("routes imported desktop accounts and social logins through kiro.dev first", () => {
+  it("routes imported desktop accounts and social logins through kiro.dev only", () => {
     expect(executor.getOrderedBaseUrls(credentials("imported"))).toEqual([
       RUNTIME,
-      Q,
-      CODEWHISPERER,
     ]);
     expect(executor.getOrderedBaseUrls(credentials("google"))).toEqual([
       RUNTIME,
-      Q,
-      CODEWHISPERER,
     ]);
+    expect(executor.getFallbackCount(credentials("imported"))).toBe(1);
+    expect(executor.getFallbackCount(credentials("api_key"))).toBe(3);
   });
 
   it("regionalizes a covered region for IDC with Q first", () => {

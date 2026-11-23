@@ -228,7 +228,7 @@ export class KiroExecutor extends BaseExecutor {
       ...PROVIDERS.kiro,
       retry: {
         ...PROVIDERS.kiro?.retry,
-        429: { attempts: 2, delayMs: 2000 },
+        429: { attempts: 3, delayMs: 2500 },
       },
     });
   }
@@ -330,15 +330,20 @@ export class KiroExecutor extends BaseExecutor {
     const remaining = amazon.filter((u) => !u.includes("://q."));
 
     // Imported accounts (from Kiro IDE desktop) and social logins authenticate
-    // directly against Kiro's runtime gateway (runtime.*.kiro.dev). Trying Amazon Q
-    // or CodeWhisperer first wastes time and trips 429 USER_REQUEST_RATE_EXCEEDED.
+    // directly against Kiro's runtime gateway (runtime.*.kiro.dev). Amazon surfaces
+    // reject these bearer tokens with 400/403/429, so falling back to them wastes
+    // 14s and triggers cascading lockouts.
     if (authMethod === "imported" || authMethod === "google" || authMethod === "github") {
-      return [...others, ...q, ...remaining];
+      return others.length > 0 ? others : baseUrls;
     }
 
     return q.length > 0
       ? [...q, ...remaining, ...others]
       : [...amazon, ...others];
+  }
+
+  getFallbackCount(credentials = null) {
+    return this.getOrderedBaseUrls(credentials).length || 1;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
@@ -349,9 +354,9 @@ export class KiroExecutor extends BaseExecutor {
 
   // Retry only endpoint/auth-surface failures. Payload-invalid HTTP 400 must be
   // terminal: sending the same malformed body to every surface cannot repair it.
-  shouldRetry(status, urlIndex) {
-    const hasFallback = urlIndex + 1 < this.getFallbackCount();
-    return super.shouldRetry(status, urlIndex)
+  shouldRetry(status, urlIndex, credentials = null) {
+    const hasFallback = urlIndex + 1 < this.getFallbackCount(credentials);
+    return super.shouldRetry(status, urlIndex, credentials)
       || (hasFallback && KIRO_ENDPOINT_FALLBACK_STATUSES.has(status));
   }
 
