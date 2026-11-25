@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { generatePKCE } from "@/lib/oauth/utils/pkce";
 import { KiroService } from "@/lib/oauth/services/kiro";
 
 /**
  * GET /api/oauth/kiro/social-authorize
- * Generate Google/GitHub social login URL for manual callback flow
- * Uses kiro:// custom protocol as required by AWS Cognito
+ * Initiate Google/GitHub social login via Kiro desktop device flow.
+ * Returns verification URL & userCode for the user to authenticate in browser.
  */
 export async function GET(request) {
   try {
@@ -19,25 +18,12 @@ export async function GET(request) {
       );
     }
 
-    // Generate PKCE for social auth
-    const { codeVerifier, codeChallenge, state } = generatePKCE();
-
     const kiroService = new KiroService();
-    const authUrl = kiroService.buildSocialLoginUrl(
-      provider,
-      codeChallenge,
-      state
-    );
+    const authData = await kiroService.startSocialDeviceAuthorization(provider);
 
-    return NextResponse.json({
-      authUrl,
-      state,
-      codeVerifier,
-      codeChallenge,
-      provider,
-    });
+    return NextResponse.json(authData);
   } catch (error) {
-    console.log("Kiro social authorize error:", error);
+    console.error("Kiro social authorize error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

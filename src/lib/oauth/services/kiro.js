@@ -1,5 +1,6 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
-import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
+import { buildKiroIdentityHeaders } from "../../../../open-sse/shared/kiroIdentity.js";
+import { classifyKiroSocialPoll } from "../kiroSocialPoll.js";
 
 /**
  * Kiro OAuth Service
@@ -122,6 +123,97 @@ export class KiroService {
         refreshToken: data.refreshToken,
         expiresIn: data.expiresIn,
         tokenType: data.tokenType,
+      },
+    };
+  }
+
+  /**
+   * Start social device authorization for Google/GitHub
+   * Returns verification URI (complete with userCode and loginProvider prefilled)
+   * and polling parameters.
+   */
+  async startSocialDeviceAuthorization(provider = "github") {
+    const loginProvider = provider === "google" ? "Google" : "Github";
+    const endpoint =
+      KIRO_CONFIG.socialDeviceAuthorizeUrl ||
+      `${KIRO_AUTH_SERVICE}/oauth/device/authorization`;
+    const clientId = KIRO_CONFIG.socialClientId || "kiro-cli";
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        clientId,
+        loginProvider,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Social device authorization failed: ${error}`);
+    }
+
+    const data = await response.json();
+    return {
+      authUrl: data.verificationUriComplete || data.verificationUri,
+      deviceCode: data.deviceCode,
+      userCode: data.userCode,
+      expiresIn: Math.floor((data.expiresInMilliseconds || 300000) / 1000),
+      interval: Math.floor((data.intervalInMilliseconds || 5000) / 1000),
+      provider,
+    };
+  }
+
+  /**
+   * Poll social device authorization code for tokens
+   */
+  async pollSocialDeviceToken(deviceCode) {
+    const endpoint =
+      KIRO_CONFIG.socialDevicePollUrl ||
+      `${KIRO_AUTH_SERVICE}/oauth/device/poll`;
+    const clientId = KIRO_CONFIG.socialClientId || "kiro-cli";
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        clientId,
+        deviceCode,
+      }),
+    });
+
+    const data = await response.json();
+    const poll = classifyKiroSocialPoll(response.ok, response.status, data);
+
+    if (poll.kind === "pending") {
+      return {
+        success: false,
+        pending: true,
+        error: poll.error,
+      };
+    }
+
+    if (poll.kind === "error") {
+      return {
+        success: false,
+        pending: false,
+        error: poll.error,
+        status: poll.status,
+      };
+    }
+
+    return {
+      success: true,
+      pending: false,
+      tokens: {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        profileArn: data.profileArn,
+        expiresIn: data.expiresIn || 3600,
       },
     };
   }

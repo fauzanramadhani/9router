@@ -2,8 +2,8 @@
  * OAuth Configuration Constants — static data lives in registry, re-exported here for consumers.
  */
 import { platform, arch } from "os";
-import { ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT } from "open-sse/providers/shared.js";
-import { PROVIDER_OAUTH, PROVIDERS as REGISTRY_PROVIDERS } from "open-sse/providers/index.js";
+import { ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT } from "../../../../open-sse/providers/shared.js";
+import { PROVIDER_OAUTH, PROVIDERS as REGISTRY_PROVIDERS } from "../../../../open-sse/providers/index.js";
 
 /**
  * Get the platform enum value based on the current OS.
@@ -65,7 +65,16 @@ export const OPENAI_CONFIG = { ...PROVIDER_OAUTH["openai"] };
 export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 
 // Kiro OAuth Configuration (multi-method: AWS Builder ID / IDC / Social / Import Token)
-export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
+export const KIRO_CONFIG = {
+  ...PROVIDER_OAUTH["kiro"],
+  socialClientId: process.env.KIRO_OAUTH_CLIENT_ID || "kiro-cli",
+  socialDeviceAuthorizeUrl:
+    PROVIDER_OAUTH["kiro"]?.socialDeviceAuthorizeUrl ||
+    "https://prod.us-east-1.auth.desktop.kiro.dev/oauth/device/authorization",
+  socialDevicePollUrl:
+    PROVIDER_OAUTH["kiro"]?.socialDevicePollUrl ||
+    "https://prod.us-east-1.auth.desktop.kiro.dev/oauth/device/poll",
+};
 
 // AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)
 export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
