@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { ROLE, OPENAI_BLOCK, OPENAI_FINISH } from "../translator/schema/index.js";
+import { ROLE, OPENAI_FINISH } from "../translator/schema/index.js";
 import { validateMlaiCodeRequest } from "../services/mlaiCode.js";
+import { prepareMlaiTools, normalizeMlaiCodeRequest } from "../services/mlaiCodeTools.js";
 
 // Agent adapter, not an inference endpoint. Never reuse remote workspaces across requests.
 export class MlaiCodeExecutor extends BaseExecutor {
@@ -13,21 +14,13 @@ export class MlaiCodeExecutor extends BaseExecutor {
 
   async execute({ model, body, stream, credentials, signal, proxyOptions = null }) {
     const failure = (status, message) => ({ response: Response.json({ error: { message: `ML AI Code: ${message}`, type: "mlai_code_error" } }, { status }), url: this.config.baseUrl, headers: {}, transformedBody: null });
-    const allowedRoles = [ROLE.SYSTEM, ROLE.DEVELOPER, ROLE.USER, ROLE.ASSISTANT];
     const unsupported = validateMlaiCodeRequest(body || {});
     if (unsupported) return failure(400, unsupported);
-    if (!Array.isArray(body?.messages) || !body.messages.length || body.tools?.length || body.functions?.length ||
-        (body.n != null && body.n !== 1) || body.response_format ||
-        body.messages.some(m => !m || !allowedRoles.includes(m.role) || m.tool_calls?.length || m.function_call || m.tool_call_id || m.audio ||
-          !(typeof m.content === "string" || (Array.isArray(m.content) && m.content.every(p => p?.type === OPENAI_BLOCK.TEXT && typeof p.text === "string"))))) {
-      return failure(400, "only text messages are supported; images, audio, files, tools, structured output and multiple choices are unsupported");
-    }
+    body = normalizeMlaiCodeRequest(body);
     if (!credentials?.apiKey) return failure(401, "an mlai_sk API key is required");
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${credentials.apiKey}` };
-    const task = JSON.stringify(body.messages.map(message => ({
-      role: message.role,
-      content: typeof message.content === "string" ? message.content : message.content.map(part => part.text).join("\n"),
-    })));
+    const toolMode = prepareMlaiTools(body, body.messages);
+    const task = toolMode.task;
     if (task.length > this.config.maxTaskChars) return failure(400, "text transcript exceeds the request limit");
     signal?.throwIfAborted();
     const transformedBody = { ...this.config.jobDefaults, requestId: randomUUID(), task, model };
@@ -86,18 +79,32 @@ export class MlaiCodeExecutor extends BaseExecutor {
       total_tokens: status.usage.prompt + status.usage.completion,
       prompt_tokens_details: { cached_tokens: status.usage.cached || 0 },
     };
+    let message;
+    try { message = { role: ROLE.ASSISTANT, ...toolMode.parse(status.result.submission) }; }
+    catch (error) {
+      const safeReasons = new Set(["json_syntax", "envelope_type", "nonce_mismatch", "calls_type", "content_type", "tool_policy", "call_type", "unknown_tool", "arguments_type"]);
+      const reason = safeReasons.has(error.mlaiProtocolReason) ? ` (${error.mlaiProtocolReason})` : "";
+      return failure(502, `invalid client tool protocol submission${reason}`);
+    }
+    const finishReason = message.tool_calls ? "tool_calls" : OPENAI_FINISH.STOP;
     const answer = {
       id: `chatcmpl-${randomUUID()}`, object: "chat.completion", created: Math.floor(Date.now() / 1000), model,
-      choices: [{ index: 0, message: { role: ROLE.ASSISTANT, content: status.result.submission }, finish_reason: OPENAI_FINISH.STOP }],
+      choices: [{ index: 0, message, finish_reason: finishReason }],
       ...(usage ? { usage } : {}),
     };
     // Buffered SSE: the upstream agent has no native inference token stream.
     const chunk = (delta, finish = null) => ({
       id: answer.id, object: "chat.completion.chunk", created: answer.created, model,
       choices: [{ index: 0, delta, finish_reason: finish }],
-      ...(finish && usage ? { usage } : {}),
+      ...(finish && usage && !body.stream_options?.include_usage ? { usage } : {}),
     });
-    const frames = [chunk({ role: ROLE.ASSISTANT, content: "" }), chunk({ content: status.result.submission }), chunk({}, OPENAI_FINISH.STOP)];
+    const frames = [chunk({ role: ROLE.ASSISTANT, content: "" })];
+    if (message.tool_calls) {
+      if (message.content) frames.push(chunk({ content: message.content }));
+      message.tool_calls.forEach((call, index) => frames.push(chunk({ tool_calls: [{ index, ...call }] })));
+    } else frames.push(chunk({ content: message.content }));
+    frames.push(chunk({}, finishReason));
+    if (body.stream_options?.include_usage && usage) frames.push({ id: answer.id, object: "chat.completion.chunk", created: answer.created, model, choices: [], usage });
     const response = stream
       ? new Response(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } })
       : Response.json(answer);

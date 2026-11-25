@@ -1,4 +1,5 @@
 import { FORMATS } from "./formats.js";
+import { normalizeMlaiCodeRequest } from "../services/mlaiCodeTools.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest, ensureTrailingUserTurn } from "./formats/claude.js";
 import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
@@ -68,6 +69,10 @@ function detectClientLastRole(body) {
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
+  // This text-agent bridge must not synthesize missing results or rewrite tool IDs/names.
+  if (provider === "mlai-code" && targetFormat === FORMATS.OPENAI) {
+    return { ...normalizeMlaiCodeRequest(body), model, stream };
+  }
   let result = body;
   // Role the client actually ended on, before any translator drops an emptied turn.
   const clientLastRole = detectClientLastRole(body);

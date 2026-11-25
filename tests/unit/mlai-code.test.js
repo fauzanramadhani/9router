@@ -53,7 +53,7 @@ it("buffers a valid OpenAI SSE final answer and gives every request a fresh id",
 });
 
 it.each([
-  { tools: [{ type: "function", function: { name: "run" } }] },
+  { tools: [{ type: "function", function: { name: "run", strict: true } }] },
   { functions: [{ name: "run" }] },
   { messages: [{ role: "tool", content: "result" }] },
   { messages: [{ role: "assistant", content: "", tool_calls: [{ id: "call" }] }] },

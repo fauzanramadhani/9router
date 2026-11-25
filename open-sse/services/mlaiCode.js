@@ -1,23 +1,19 @@
 import { PROVIDERS } from "../config/providers.js";
-import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
+import { normalizeMlaiCodeRequest } from "./mlaiCodeTools.js";
 
 // Run on the original request: intermediary translators may otherwise discard unsupported blocks.
 export function validateMlaiCodeRequest(body) {
-  const error = "ML AI Code: images, audio, files, tools and structured output are unsupported; send text-only messages";
-  if (body.tools?.length || body.functions?.length || body.response_format || body.text?.format || body.audio ||
-      body.attachments?.length || body.files?.length || body.images?.length ||
-      body.modalities?.some(m => m !== OPENAI_BLOCK.TEXT) || (body.tool_choice && body.tool_choice !== "none") ||
-      (body.function_call && body.function_call !== "none")) return error;
-  const textBlocks = new Set([OPENAI_BLOCK.TEXT, RESPONSES_ITEM.INPUT_TEXT, RESPONSES_ITEM.OUTPUT_TEXT]);
-  const validContent = content => typeof content === "string" || (Array.isArray(content) && content.every(p => p && textBlocks.has(p.type) && typeof p.text === "string"));
-  const messages = body.messages || (Array.isArray(body.input) ? body.input : []);
-  for (const message of messages) {
-    if (typeof message === "string") continue;
-    if (!message || message.role === ROLE.TOOL || message.role === ROLE.FUNCTION || message.tool_calls?.length || message.function_call || message.audio ||
-        message.attachments?.length || (message.type && message.type !== RESPONSES_ITEM.MESSAGE) || !validContent(message.content)) return error;
-  }
-  if (body.system && !validContent(body.system)) return error;
-  return null;
+  const error = "ML AI Code: unsupported input; use text and non-strict function tools only (no images, audio, files, structured output or multiple choices)";
+  try {
+    if (!body || body.functions?.length ||
+        (body.response_format && body.response_format.type !== "text") ||
+        (body.text?.format && body.text.format.type !== "text") || body.audio ||
+        body.attachments?.length || body.files?.length || body.images?.length ||
+        (body.modalities != null && (!Array.isArray(body.modalities) || body.modalities.some(m => m !== "text"))) ||
+        (body.function_call && body.function_call !== "none") || (body.n != null && body.n !== 1)) return error;
+    normalizeMlaiCodeRequest(body);
+    return null;
+  } catch { return error; }
 }
 
 // Read-only authentication check: never launch a billable agent for credential testing.
