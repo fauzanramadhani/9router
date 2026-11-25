@@ -22,7 +22,7 @@ export default {
     validationTimeoutMs: 8000,
     pollIntervalMs: 1000,
     maxPolls: 180,
-    maxTaskChars: 200000,
+    maxTaskChars: 28500,
     jobDefaults: {
       action: "start", mode: "auto", role: "auto", steps: 4,
       tools: [], connected: [], withheld: [], profile: "small", effort: "low",

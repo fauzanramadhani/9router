@@ -152,3 +152,30 @@ it("emulates a client tool call from a nonce-bound final submission without regi
   expect(protocol(JSON.parse(launched.task)).tools).toEqual(tools);
   expect(JSON.parse(launched.task).at(-1).content).toContain("Do not execute client tools");
 });
+
+it("compacts large tool declarations so that 80+ tools stay under the 30,000 char task limit", async () => {
+  const largeTools = [];
+  for (let i = 0; i < 81; i++) {
+    largeTools.push({
+      type: "function",
+      function: {
+        name: `mcp_tool_${i}`,
+        description: `Performs operation ${i} with very detailed description on the system workspace.`,
+        parameters: {
+          $schema: "http://json-schema.org/draft-07/schema#",
+          title: `mcp_tool_${i}_args`,
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Target path" },
+          },
+          required: ["path"],
+        },
+      },
+    });
+  }
+
+  mockAgent(task => JSON.stringify({ nonce: protocol(task).nonce, content: "Ready", tool_calls: [] }));
+  const result = await execute({ ...base, tools: largeTools });
+  expect(result.response.status).toBe(200);
+  expect(launched.task.length).toBeLessThan(28500);
+});

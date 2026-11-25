@@ -21,7 +21,7 @@ export class MlaiCodeExecutor extends BaseExecutor {
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${credentials.apiKey}` };
     const toolMode = prepareMlaiTools(body, body.messages);
     const task = toolMode.task;
-    if (task.length > this.config.maxTaskChars) return failure(400, "text transcript exceeds the request limit");
+    if (task.length > this.config.maxTaskChars) return failure(400, `task transcript exceeds the upstream limit (${task.length} > ${this.config.maxTaskChars} chars); reduce tool count (${body.tools?.length || 0} tools) or conversation length`);
     signal?.throwIfAborted();
     const transformedBody = { ...this.config.jobDefaults, requestId: randomUUID(), task, model };
     const timeout = new AbortController();
@@ -38,8 +38,13 @@ export class MlaiCodeExecutor extends BaseExecutor {
       combined.throwIfAborted();
       const response = await proxyAwareFetch(url, { method: "POST", headers, body: JSON.stringify(data), signal: combined }, proxyOptions);
       if (!response.ok) {
-        await response.body?.cancel();
-        fail(response.status, `upstream HTTP ${response.status}`);
+        const errorText = await response.text().catch(() => "");
+        if (errorText) console.error(`[mlai-code] upstream HTTP ${response.status}:`, errorText);
+        let detail = "";
+        if (response.status === 400 && errorText.includes("Invalid task submission")) {
+          detail = "Invalid task submission; task length may exceed upstream limit";
+        }
+        fail(response.status, detail ? `upstream HTTP ${response.status} (${detail})` : `upstream HTTP ${response.status}`);
       }
       const value = await response.json();
       if (!value || typeof value !== "object" || value.error) fail(502, "invalid upstream response");
