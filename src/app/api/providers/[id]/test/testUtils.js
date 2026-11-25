@@ -932,6 +932,10 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
       }
+      case "mlai-code": {
+        const { probeMlaiCodeKey } = await import("open-sse/services/mlaiCode.js");
+        return probeMlaiCodeKey(connection.apiKey, (url, init) => fetchWithConnectionProxy(url, init, effectiveProxy));
+      }
       case "sensenova":
       case "sensenova-intl": {
         // China and international sites are separate providers; each registry entry owns its host.

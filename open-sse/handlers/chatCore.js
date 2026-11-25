@@ -33,6 +33,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { validateMlaiCodeRequest } from "../services/mlaiCode.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -75,6 +76,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const reqTag = log?.tagForSession ? log.tagForSession(sessionSeed) : (log?.nextTag ? log.nextTag() : "");
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
+  if (provider === "mlai-code") {
+    const unsupported = validateMlaiCodeRequest(body);
+    if (unsupported) return createErrorResult(HTTP_STATUS.BAD_REQUEST, unsupported);
+  }
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);

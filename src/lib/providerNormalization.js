@@ -13,6 +13,7 @@ export function normalizeProviderId(provider) {
   if (typeof provider !== "string") return provider;
 
   const trimmed = provider.trim();
+  if (trimmed === "mlai") return "mlai-code";
   if (AI_PROVIDERS[trimmed]) return trimmed;
 
   const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

@@ -13,10 +13,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
-  const credentialLabel = isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
+  const credentialLabel = AI_PROVIDERS[provider]?.credentialLabel || (isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key");
   const credentialPlaceholder = isCookie
     ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
-    : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
+    : (AI_PROVIDERS[provider]?.credentialPlaceholder || (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : ""));
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";

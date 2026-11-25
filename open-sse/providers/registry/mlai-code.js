@@ -1,0 +1,38 @@
+export default {
+  id: "mlai-code",
+  alias: "mlai",
+  category: "apikey",
+  authType: "apikey",
+  credentialLabel: "ML AI Code agent API key",
+  credentialPlaceholder: "mlai_sk…",
+  authHint: "ML AI Code agent API key (mlai_sk…). Uses undocumented agent APIs, not raw inference. Text only; streaming is buffered until the agent finishes. Each request launches a fresh workspace.",
+  display: {
+    name: "ML AI Code Agent",
+    icon: "code",
+    color: "#6366F1",
+    textIcon: "ML",
+    website: "https://code.ml.ai",
+  },
+  transport: {
+    baseUrl: "https://code.ml.ai/api/jobs",
+    workspaceUrl: "https://code.ml.ai/api/workspace",
+    validateUrl: "https://code.ml.ai/api/routines",
+    format: "openai",
+    timeoutMs: 180000,
+    validationTimeoutMs: 8000,
+    pollIntervalMs: 1000,
+    maxPolls: 180,
+    maxTaskChars: 200000,
+    jobDefaults: {
+      action: "start", mode: "auto", role: "auto", steps: 4,
+      tools: [], connected: [], withheld: [], profile: "small", effort: "low",
+      planApproval: "off", askFirst: "never", imageLimit: 0, autoCheckpoint: false,
+    },
+    terminalFailures: ["failed", "error", "cancelled", "canceled", "expired"],
+  },
+  models: [
+    { id: "pixis-opus", name: "Opus 5.5R" },
+    { id: "pixis", name: "Pixis" },
+    { id: "pixis-sol", name: "GPT 6.1R Sol" },
+  ],
+};

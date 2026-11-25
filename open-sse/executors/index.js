@@ -35,8 +35,11 @@ import WindsurfExecutor from "./windsurf.js";
 import { DefaultExecutor } from "./default.js";
 import { MinimaxCodeExecutor } from "./minimax-code.js";
 import { DevinCliExecutor } from "./devin-cli.js";
+import { MlaiCodeExecutor } from "./mlai-code.js";
 
 const executors = {
+  "mlai-code": new MlaiCodeExecutor(),
+  mlai: new MlaiCodeExecutor(),
   antigravity: new AntigravityExecutor(),
   azure: new AzureExecutor(),
   "gemini-cli": new GeminiCLIExecutor(),
