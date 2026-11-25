@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
+import { findKiroConnectionByIdentity } from "@/lib/oauth/kiroConnectionIdentity";
 import {
   createProviderConnection,
   getProviderConnections,
@@ -84,13 +85,15 @@ export async function POST(request) {
       isActive: true,
     };
 
-    // Check existing connections to update if same account/profileArn
+    // Check existing connections to update only if exact account matches.
+    // ProfileArn alone identifies the CodeWhisperer profile, not the account (distinct
+    // accounts share the same ARN). Only match if account-level identifiers agree.
     const existing = await getProviderConnections({ provider: "kiro" });
-    const match = existing.find(
-      (c) =>
-        (email && c.email === email) ||
-        (tokenData.profileArn && c.providerSpecificData?.profileArn === tokenData.profileArn)
-    );
+    const match = findKiroConnectionByIdentity(existing, {
+      authType: "oauth",
+      profileArn: tokenData.profileArn,
+      email,
+    });
 
     const connection = match
       ? await updateProviderConnection(match.id, connectionData)

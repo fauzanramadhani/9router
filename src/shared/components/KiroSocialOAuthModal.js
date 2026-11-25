@@ -195,6 +195,21 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               </div>
             </div>
 
+            {/* Incognito Notice for Multi-Account */}
+            <div className="bg-amber-50 dark:bg-amber-900/20 p-3.5 rounded-lg border border-amber-200 dark:border-amber-800">
+              <div className="flex gap-2.5">
+                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-lg mt-0.5">
+                  lightbulb
+                </span>
+                <div className="text-xs text-amber-800 dark:text-amber-200">
+                  <p className="font-semibold mb-0.5">Menautkan Akun Kedua / Berbeda?</p>
+                  <p>
+                    Jika browser Anda sedang login ke akun {providerName} lain, silakan <strong>Copy</strong> URL verifikasi di bawah dan buka di jendela <strong>Incognito / Private Window</strong> agar tidak otomatis tersambung ke akun pertama.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Verification Code Box */}
             {userCode && (
               <div className="text-center py-4 bg-sidebar border border-border rounded-xl">

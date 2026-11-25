@@ -171,6 +171,16 @@ export async function createProviderConnection(data) {
           return !!incomingWs && !!existingWs && incomingWs === existingWs;
         }
 
+        // Kiro: distinct AWS profiles or external IdP accounts can share an email.
+        // If both sides have profileArn and they differ, treat as separate accounts (#10815).
+        if (data.provider === "kiro") {
+          const incomingProfileArn = data.providerSpecificData?.profileArn;
+          const existingProfileArn = c.providerSpecificData?.profileArn;
+          if (incomingProfileArn && existingProfileArn && incomingProfileArn !== existingProfileArn) {
+            return false;
+          }
+        }
+
         // Workspace providers use workspace ID when both sides have it
         const existingWs = c.providerSpecificData?.chatgptAccountId;
         if (incomingWs && existingWs) return incomingWs === existingWs;
