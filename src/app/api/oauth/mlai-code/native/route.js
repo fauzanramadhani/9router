@@ -5,8 +5,14 @@ import { createProviderConnection } from '@/models';
 export const runtime = 'nodejs';
 const sessions = new Map();
 export async function POST(request) {
+ // Dashboard authentication remains enforced by dashboardGuard (/api/oauth).
+ // Do not trust forwarded headers supplied by callers to relax this boundary.
+ const origin = request.headers.get('origin');
+ if (request.headers.get('sec-fetch-site') === 'cross-site' || (origin && origin !== new URL(request.url).origin)) return Response.json({error:'Invalid request origin'},{status:403});
+ if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') return Response.json({error:'JSON required'},{status:415});
  let body;
  try { body = await request.json(); } catch { return Response.json({error:'Invalid request'},{status:400}); }
+ if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({error:'Invalid request'},{status:400});
  for (const [key, value] of sessions) if (value.expires < Date.now()) { value.login.cancel(); sessions.delete(key); }
  if (body.action === 'start') {
   if (sessions.size >= 8) return Response.json({error:'Too many pending native logins'},{status:429});
@@ -20,8 +26,13 @@ export async function POST(request) {
  const entry = sessions.get(body.session);
  if (!entry) return Response.json({error:'Native login session expired'},{status:404});
  if (body.action === 'cancel') { entry.login.cancel(); sessions.delete(body.session); return Response.json({status:'cancelled'}); }
+ if (body.action === 'callback') {
+  if (typeof body.callbackUrl !== 'string' || body.callbackUrl.length > 4096) return Response.json({error:'Invalid sign-in callback'},{status:400});
+  try { return Response.json(await entry.login.submitCallback(body.callbackUrl),{headers:{'Cache-Control':'no-store'}}); }
+  catch { return Response.json({error:'Invalid or already used sign-in callback'},{status:400,headers:{'Cache-Control':'no-store'}}); }
+ }
  if (body.action !== 'status') return Response.json({error:'Unknown action'},{status:400});
  const status = entry.login.status();
- if (status.status !== 'pending') sessions.delete(body.session);
+ // Retain sanitized terminal results until expiry: manual completion and polling may race.
  return Response.json(status,{headers:{'Cache-Control':'no-store'}});
 }

@@ -1,5 +1,4 @@
 import { FORMATS } from "./formats.js";
-import { translateKiroModern } from "../services/kiroModern.js";
 
 import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest, ensureTrailingUserTurn } from "./formats/claude.js";
@@ -73,10 +72,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Native inference preserves the complete OpenAI payload, including tool IDs and schemas.
   if (provider === "mlai-code" && targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI) {
     return { ...body, model, stream };
-  }
-  if (provider === "kiro" && targetFormat === "openai-responses") {
-    const modern = translateKiroModern(sourceFormat, model, body);
-    if (modern) return modern;
   }
   let result = body;
   // Role the client actually ended on, before any translator drops an emptied turn.

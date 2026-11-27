@@ -17,7 +17,17 @@ Source contract: distributed official `mlai-code@0.3.32` Windows CLI, function `
 5. Connection-scoped POST `/api/laptop` with `action:start`, `engineCaps:1`, project identity, and official laptop device headers obtains an expiring run grant. Only the exact gateway `https://code.ml.ai/api/model/v1` is trusted.
 6. Forward the full OpenAI request to `/chat/completions` with the run grant. Native tools, tool history, full schemas, system/history, stream options and upstream SSE body are retained. No cloud transcript envelope, emulated tool protocol, context cap, or file transport is used.
 
-The dashboard must be opened on the computer hosting 9router, or an operator must provide an appropriate secure loopback tunnel. An arbitrary remote browser cannot redirect to the server's loopback listener. Login sessions expire after three minutes; close/cancel cleans up their listener. This is a Node runtime feature, not an edge-worker login flow.
+### Remote-server sign-in (manual callback, like Codex)
+
+1. Open **Native Device Login** in your authenticated HTTPS dashboard, then open the official sign-in link.
+2. Complete sign-in. On a different computer from the router host, the redirected `http://127.0.0.1:PORT/callback?...` page may show `ERR_CONNECTION_REFUSED`: its loopback address refers to your browser's computer, not the server.
+3. Copy the **complete address-bar URL** from that failed callback tab. Return to the still-open native login dialog, paste it into **Paste callback URL**, and select **Complete sign-in**. Do not paste only the code, reuse an earlier attempt, or share the URL: it contains a one-time secret.
+
+Local automatic loopback callbacks still work; no tunnel is required for manual completion. Both paths use the same server-owned session, strict callback parser, and single-exchange guard. The pasted URL is parsed only, never fetched. Only the exact `http://127.0.0.1:<session-port>/callback` target and matching state are accepted; credentials, fragments, duplicate/unknown parameters, mixed code/error responses and malformed codes are rejected. Only a state-matched `error=access_denied` without any code cancels sign-in. The PKCE verifier never leaves the server, and the exchange endpoint is fixed.
+
+The existing authenticated `/api/oauth/mlai-code/native` POST route accepts `{action:"callback",session,callbackUrl}` alongside start/status/cancel. Browser requests use same-origin JSON; cross-site/foreign-origin submissions are rejected. Do not weaken dashboard authentication or trust caller-supplied forwarding headers. Sanitized terminal status remains readable until session cleanup so polling cannot consume the result before manual completion sees it. Cancel/expiry wins before persistence begins; persistence is the commit point and cannot be cancelled mid-write. No callback codes, verifiers or device tokens are logged or returned in status.
+
+Login sessions expire after three minutes; close/cancel cleans up their listener. In-memory route entries expire after four minutes and are swept on subsequent requests. Restarting the router loses pending login sessions; restart sign-in rather than reusing an old callback. This is a Node runtime feature, not an edge-worker login flow.
 
 ## Expiry, rotation and restrictions
 
@@ -43,4 +53,4 @@ Safe diagnostics read at most 8192 bytes within 1000 ms and expose fixed allowli
 
 Focused tests mock `proxyAwareFetch` itself. Login tests make synthetic local loopback callbacks with a mocked official exchange and mocked connection persistence; they never open the official login page or use an existing account. Test configuration creates an isolated scratch DATA_DIR.
 
-Current source cleanup is verified with isolated mocked tests only. Historical live native verification is separate from this change; no build, deployment, editor exercise, real database operation or account acceptance is performed by these tests. Two-real-account support and measured context capacity remain unverified.
+Remote callback changes passed 121 focused ML AI tests across 15 files, including synthetic loopback/manual login, rejection and concurrency tests. The modal test checks its source wiring, not rendered browser interaction. An isolated production webpack build also passed with a unique output directory and scratch DATA_DIR; build-time database initialization stayed in that scratch directory. No deployment, running-server change, real login, editor exercise or protected account database operation was performed. Historical live native verification is separate from this change. Reverse-proxy runtime origin behavior and actual browser/account acceptance remain parent-owned gates; two-real-account support and measured context capacity remain unverified.
