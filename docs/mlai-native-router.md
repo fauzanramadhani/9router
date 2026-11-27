@@ -27,6 +27,8 @@ Local automatic loopback callbacks still work; no tunnel is required for manual 
 
 The existing authenticated `/api/oauth/mlai-code/native` POST route accepts `{action:"callback",session,callbackUrl}` alongside start/status/cancel. Browser requests use same-origin JSON; cross-site/foreign-origin submissions are rejected. Do not weaken dashboard authentication or trust caller-supplied forwarding headers. Sanitized terminal status remains readable until session cleanup so polling cannot consume the result before manual completion sees it. Cancel/expiry wins before persistence begins; persistence is the commit point and cannot be cancelled mid-write. No callback codes, verifiers or device tokens are logged or returned in status.
 
+Behind a reverse proxy, set server-only `MLAI_NATIVE_PUBLIC_ORIGIN=https://pooling.zanslab.id` to the dashboard's public origin. This dedicated setting takes precedence over `BASE_URL`; if neither is set, the route uses `request.url`'s origin for direct/local access. Use an HTTP(S) origin only (an optional trailing slash is allowed), without credentials, a path, query or fragment. Invalid configuration fails closed. Configuring a public origin does not also allow the internal request origin, and `Host`, `Forwarded` and `X-Forwarded-*` headers cannot expand the allowlist. Existing dashboard authentication and cross-site rejection remain required.
+
 Login sessions expire after three minutes; close/cancel cleans up their listener. In-memory route entries expire after four minutes and are swept on subsequent requests. Restarting the router loses pending login sessions; restart sign-in rather than reusing an old callback. This is a Node runtime feature, not an edge-worker login flow.
 
 ## Expiry, rotation and restrictions

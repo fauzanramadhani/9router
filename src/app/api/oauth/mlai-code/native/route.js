@@ -4,11 +4,23 @@ import { createProviderConnection } from '@/models';
 
 export const runtime = 'nodejs';
 const sessions = new Map();
+function allowedOrigin(request) {
+ // Only server configuration may describe the reverse proxy's public origin.
+ // An explicitly invalid setting must fail closed, not fall back to request data.
+ const configured = process.env.MLAI_NATIVE_PUBLIC_ORIGIN || process.env.BASE_URL;
+ try {
+  const url = new URL(configured || request.url);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+  if (configured && (url.pathname !== '/' || url.search || url.hash)) return null;
+  return url.origin;
+ } catch { return null; }
+}
 export async function POST(request) {
  // Dashboard authentication remains enforced by dashboardGuard (/api/oauth).
  // Do not trust forwarded headers supplied by callers to relax this boundary.
  const origin = request.headers.get('origin');
- if (request.headers.get('sec-fetch-site') === 'cross-site' || (origin && origin !== new URL(request.url).origin)) return Response.json({error:'Invalid request origin'},{status:403});
+ const expectedOrigin = allowedOrigin(request);
+ if (!expectedOrigin || request.headers.get('sec-fetch-site') === 'cross-site' || (origin && origin !== expectedOrigin)) return Response.json({error:'Invalid request origin'},{status:403});
  if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') return Response.json({error:'JSON required'},{status:415});
  let body;
  try { body = await request.json(); } catch { return Response.json({error:'Invalid request'},{status:400}); }

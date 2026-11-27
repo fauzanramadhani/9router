@@ -1,4 +1,6 @@
-import {it,expect,vi} from 'vitest';
+import {afterEach,beforeEach,it,expect,vi} from 'vitest';
+beforeEach(()=>{vi.stubEnv('MLAI_NATIVE_PUBLIC_ORIGIN','');vi.stubEnv('BASE_URL','');});
+afterEach(()=>vi.unstubAllEnvs());
 const mocks=vi.hoisted(()=>({start:vi.fn(),save:vi.fn()}));
 vi.mock('../../src/lib/oauth/services/mlai-native.js',()=>({startMlaiLogin:mocks.start}));
 vi.mock('@/models',()=>({createProviderConnection:mocks.save}));
