@@ -367,6 +367,10 @@ function isTokenExpired(connection) {
 }
 
 async function testOAuthConnection(connection, effectiveProxy = null) {
+  if (connection.provider === "mlai-code" && connection.providerSpecificData?.mlaiNative === true) {
+    const valid = typeof connection.accessToken === "string" && connection.accessToken.startsWith("mlaid_") && Number.isFinite(Date.parse(connection.expiresAt)) && Date.parse(connection.expiresAt) > Date.now();
+    return { valid, error: valid ? null : "Native device login missing or expired; reconnect", refreshed: false, message: "Device credential metadata only; upstream acceptance is not verified and no inference was launched" };
+  }
   const config = OAUTH_TEST_CONFIG[connection.provider];
   if (!config) return { valid: false, error: "Provider test not supported", refreshed: false };
   if (!connection.accessToken) return { valid: false, error: "No access token", refreshed: false };
@@ -932,10 +936,8 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
       }
-      case "mlai-code": {
-        const { probeMlaiCodeKey } = await import("open-sse/services/mlaiCode.js");
-        return probeMlaiCodeKey(connection.apiKey, (url, init) => fetchWithConnectionProxy(url, init, effectiveProxy));
-      }
+      case "mlai-code":
+        return { valid: false, error: "ML AI Code requires native device login; API keys are not supported" };
       case "sensenova":
       case "sensenova-intl": {
         // China and international sites are separate providers; each registry entry owns its host.
@@ -1047,5 +1049,5 @@ export async function testSingleConnection(id) {
 
   await updateProviderConnection(id, updateData);
 
-  return { valid: result.valid, error: result.error, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
+  return { valid: result.valid, error: result.error, ...(result.message ? { message: result.message } : {}), refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
 }

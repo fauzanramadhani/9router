@@ -101,6 +101,10 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    if (existing.provider === "mlai-code" && (apiKey !== undefined || (existing.authType !== "oauth" && providerSpecificData?.mlaiNative === true))) {
+      return NextResponse.json({ error: "ML AI Code requires native device login; API-key edits are not supported" }, { status: 400 });
+    }
+
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });

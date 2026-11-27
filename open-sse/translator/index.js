@@ -1,5 +1,6 @@
 import { FORMATS } from "./formats.js";
-import { normalizeMlaiCodeRequest } from "../services/mlaiCodeTools.js";
+import { translateKiroModern } from "../services/kiroModern.js";
+
 import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest, ensureTrailingUserTurn } from "./formats/claude.js";
 import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
@@ -69,9 +70,13 @@ function detectClientLastRole(body) {
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
-  // This text-agent bridge must not synthesize missing results or rewrite tool IDs/names.
-  if (provider === "mlai-code" && targetFormat === FORMATS.OPENAI) {
-    return { ...normalizeMlaiCodeRequest(body), model, stream };
+  // Native inference preserves the complete OpenAI payload, including tool IDs and schemas.
+  if (provider === "mlai-code" && targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI) {
+    return { ...body, model, stream };
+  }
+  if (provider === "kiro" && targetFormat === "openai-responses") {
+    const modern = translateKiroModern(sourceFormat, model, body);
+    if (modern) return modern;
   }
   let result = body;
   // Role the client actually ended on, before any translator drops an emptied turn.

@@ -14,7 +14,6 @@ import {
   isNousApiKeyAccepted,
 } from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
-import { probeMlaiCodeKey } from "open-sse/services/mlaiCode.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -111,7 +110,7 @@ export async function POST(request) {
 
     // Validate with each provider
     try {
-      if (provider === "mlai-code") return NextResponse.json(await probeMlaiCodeKey(apiKey));
+      if (provider === "mlai-code") return NextResponse.json({ valid: false, error: "ML AI Code requires native device login; API keys are not supported" }, { status: 400 });
       if (isOpenAICompatibleProvider(provider)) {
         const node = await getProviderNodeById(provider);
         if (!node) {

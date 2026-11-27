@@ -93,7 +93,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const storedConnections = await getProviderConnections({ provider: providerId, isActive: true });
+    // ML AI supports only native device credentials, regardless of model selection.
+    const connections = providerId === "mlai-code"
+      ? storedConnections.filter(c => c.providerSpecificData?.mlaiNative === true)
+      : storedConnections;
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {

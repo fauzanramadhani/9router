@@ -1,121 +1,30 @@
-import { randomUUID } from "node:crypto";
+import { executeMlaiNativeGateway } from "../services/mlaiCodeNativeGateway.js";
+import { getMlaiNativeGrant } from "../services/mlaiNativeSession.js";
+import { MlaiNativeError } from "../services/mlaiNativeErrors.js";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { ROLE, OPENAI_FINISH } from "../translator/schema/index.js";
-import { validateMlaiCodeRequest } from "../services/mlaiCode.js";
-import { prepareMlaiTools, normalizeMlaiCodeRequest } from "../services/mlaiCodeTools.js";
 
-// Agent adapter, not an inference endpoint. Never reuse remote workspaces across requests.
+// Native device-authenticated inference only. Never launch a cloud agent.
 export class MlaiCodeExecutor extends BaseExecutor {
-  constructor(config = PROVIDERS["mlai-code"]) {
-    super("mlai-code", config);
-  }
+  constructor(config = PROVIDERS["mlai-code"]) { super("mlai-code", config); }
 
   async execute({ model, body, stream, credentials, signal, proxyOptions = null }) {
-    const failure = (status, message) => ({ response: Response.json({ error: { message: `ML AI Code: ${message}`, type: "mlai_code_error" } }, { status }), url: this.config.baseUrl, headers: {}, transformedBody: null });
-    const unsupported = validateMlaiCodeRequest(body || {});
-    if (unsupported) return failure(400, unsupported);
-    body = normalizeMlaiCodeRequest(body);
-    if (!credentials?.apiKey) return failure(401, "an mlai_sk API key is required");
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${credentials.apiKey}` };
-    const toolMode = prepareMlaiTools(body, body.messages);
-    const task = toolMode.task;
-    if (task.length > this.config.maxTaskChars) return failure(400, `task transcript exceeds the upstream limit (${task.length} > ${this.config.maxTaskChars} chars); reduce tool count (${body.tools?.length || 0} tools) or conversation length`);
-    signal?.throwIfAborted();
-    const transformedBody = { ...this.config.jobDefaults, requestId: randomUUID(), task, model };
-    const timeout = new AbortController();
-    const timer = setTimeout(() => timeout.abort(new DOMException("Agent deadline exceeded", "TimeoutError")), this.config.timeoutMs);
-    const combined = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
-    const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
-    const pause = () => new Promise((resolve, reject) => {
-      combined.throwIfAborted();
-      const abort = () => { clearTimeout(wait); reject(combined.reason); };
-      const wait = setTimeout(() => { combined.removeEventListener("abort", abort); resolve(); }, this.config.pollIntervalMs);
-      combined.addEventListener("abort", abort, { once: true });
-    });
-    const post = async (url, data) => {
-      combined.throwIfAborted();
-      const response = await proxyAwareFetch(url, { method: "POST", headers, body: JSON.stringify(data), signal: combined }, proxyOptions);
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        if (errorText) console.error(`[mlai-code] upstream HTTP ${response.status}:`, errorText);
-        let detail = "";
-        if (response.status === 400 && errorText.includes("Invalid task submission")) {
-          detail = "Invalid task submission; task length may exceed upstream limit";
-        }
-        fail(response.status, detail ? `upstream HTTP ${response.status} (${detail})` : `upstream HTTP ${response.status}`);
-      }
-      const value = await response.json();
-      if (!value || typeof value !== "object" || value.error) fail(502, "invalid upstream response");
-      return value;
-    };
-    let status;
+    const failure = (status, message, code) => ({ response: Response.json({ error: { message: `ML AI Code: ${message}`, type: "mlai_code_error", ...(code ? { code } : {}) } }, { status }), url: this.config.baseUrl, headers: {}, transformedBody: null });
+    if (credentials?.providerSpecificData?.mlaiNative !== true) return failure(401, "native device login is required; API-key connections are not supported");
+    if ((model !== undefined && model !== "main") || (body?.model !== undefined && !["main", "mlai/main", "mlai-code/main"].includes(body.model))) return failure(400, "only mlai/main is supported");
     try {
-      const start = await post(this.config.baseUrl, transformedBody);
-      if (typeof start.ticket !== "string" || !start.ticket) fail(502, "job returned no ticket");
-      let workspace;
-      let polls = 0;
-      while (!workspace) {
-        if (++polls > this.config.maxPolls) fail(504, "agent polling limit exceeded");
-        const job = await post(this.config.baseUrl, { action: "status", ticket: start.ticket });
-        if (this.config.terminalFailures.includes(job.status) || this.config.terminalFailures.includes(job.state)) fail(502, "job failed");
-        workspace = job.workspace?.token;
-        if (!workspace && job.status === "completed") fail(502, "job completed without a workspace");
-        if (!workspace) await pause();
-      }
-      do {
-        if (++polls > this.config.maxPolls) fail(504, "agent polling limit exceeded");
-        const result = await post(this.config.workspaceUrl, { action: "status", token: workspace });
-        status = result.status;
-        if (!status || typeof status.state !== "string") fail(502, "invalid workspace status");
-        if (this.config.terminalFailures.includes(status.state)) fail(502, "workspace failed");
-        if (status.state !== "completed") await pause();
-      } while (status.state !== "completed");
-      if (typeof status.result?.submission !== "string" || !status.result.submission.trim()) fail(502, "workspace completed without a text submission");
+      const grant = await getMlaiNativeGrant(credentials, { signal, proxyOptions });
+      const result = await executeMlaiNativeGateway({ grant, body, stream, signal, proxyOptions });
+      if (!result.renewableRunFinished) return result;
+      // Only an explicit pre-response run_finished rejection can be replayed, once.
+      const next = await getMlaiNativeGrant(credentials, { signal, proxyOptions });
+      return await executeMlaiNativeGateway({ grant: next, body, stream, signal, proxyOptions });
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
-      return failure(timeout.signal.aborted ? 504 : error.status || 502, timeout.signal.aborted ? "agent deadline exceeded" : error.status ? error.message : "upstream request failed");
-    } finally {
-      clearTimeout(timer);
+      const safe = error instanceof MlaiNativeError;
+      const result = failure(safe ? error.status : 502, safe ? error.message : "native device gateway request failed", safe ? error.code : undefined);
+      if (safe && error.retryAfter) result.response.headers.set("Retry-After", error.retryAfter);
+      return result;
     }
-    const usage = status.usage && {
-      prompt_tokens: status.usage.prompt, completion_tokens: status.usage.completion,
-      total_tokens: status.usage.prompt + status.usage.completion,
-      prompt_tokens_details: { cached_tokens: status.usage.cached || 0 },
-    };
-    let message;
-    try { message = { role: ROLE.ASSISTANT, ...toolMode.parse(status.result.submission) }; }
-    catch (error) {
-      const safeReasons = new Set(["json_syntax", "envelope_type", "nonce_mismatch", "calls_type", "content_type", "tool_policy", "call_type", "unknown_tool", "arguments_type"]);
-      const reason = safeReasons.has(error.mlaiProtocolReason) ? ` (${error.mlaiProtocolReason})` : "";
-      return failure(502, `invalid client tool protocol submission${reason}`);
-    }
-    const finishReason = message.tool_calls ? "tool_calls" : OPENAI_FINISH.STOP;
-    const answer = {
-      id: `chatcmpl-${randomUUID()}`, object: "chat.completion", created: Math.floor(Date.now() / 1000), model,
-      choices: [{ index: 0, message, finish_reason: finishReason }],
-      ...(usage ? { usage } : {}),
-    };
-    // Buffered SSE: the upstream agent has no native inference token stream.
-    const chunk = (delta, finish = null) => ({
-      id: answer.id, object: "chat.completion.chunk", created: answer.created, model,
-      choices: [{ index: 0, delta, finish_reason: finish }],
-      ...(finish && usage && !body.stream_options?.include_usage ? { usage } : {}),
-    });
-    const frames = [chunk({ role: ROLE.ASSISTANT, content: "" })];
-    if (message.tool_calls) {
-      if (message.content) frames.push(chunk({ content: message.content }));
-      message.tool_calls.forEach((call, index) => frames.push(chunk({ tool_calls: [{ index, ...call }] })));
-    } else frames.push(chunk({ content: message.content }));
-    frames.push(chunk({}, finishReason));
-    if (body.stream_options?.include_usage && usage) frames.push({ id: answer.id, object: "chat.completion.chunk", created: answer.created, model, choices: [], usage });
-    const response = stream
-      ? new Response(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } })
-      : Response.json(answer);
-    return {
-      response, url: this.config.baseUrl,
-      headers: { "Content-Type": "application/json" }, transformedBody,
-    };
   }
 }

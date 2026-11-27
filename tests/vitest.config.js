@@ -1,12 +1,23 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
+import { mkdtempSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+// Always override inherited application DATA_DIR: storage tests delete records.
+// Never allow a test invocation to open the user's authenticated application DB.
+const scratchRoot = process.platform === "win32" && process.env.LOCALAPPDATA
+  ? join(process.env.LOCALAPPDATA, "hermes", "cache", "scratch")
+  : process.env.TMPDIR || tmpdir();
+mkdirSync(scratchRoot, { recursive: true });
+const testDataDir = mkdtempSync(join(scratchRoot, "9router-vitest-"));
 
 export default defineConfig({
   test: {
     environment: "node",
+    env: { DATA_DIR: testDataDir },
     globals: true,
     include: ["**/*.test.js"],
     // Don't scan into git worktrees nested under .claude/ — they carry their

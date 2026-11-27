@@ -85,6 +85,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
+    if (provider === "mlai-code") return NextResponse.json({ error: "ML AI Code requires native device login; API keys are not supported" }, { status: 400 });
     const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus } = body;
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {

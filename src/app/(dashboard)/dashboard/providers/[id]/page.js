@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import MlaiNativeAuthModal from "@/shared/components/MlaiNativeAuthModal";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -182,7 +183,8 @@ export default function ProviderDetailPage() {
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
   const oauthConnectionLabel =
-    providerId === "xai" ? "Grok Build OAuth"
+    providerId === "mlai-code" ? "Native Device Login"
+    : providerId === "xai" ? "Grok Build OAuth"
     : providerId === "grok-cli" ? "Grok CLI Device Login"
     : providerId === "kimi" ? "Kimi Coding OAuth"
     : "OAuth";
@@ -1928,7 +1930,9 @@ export default function ProviderDetailPage() {
       {bulkActionModal}
 
       {/* Modals */}
-      {providerId === "kiro" ? (
+      {providerId === "mlai-code" ? (
+        <MlaiNativeAuthModal isOpen={showOAuthModal} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
+      ) : providerId === "kiro" ? (
         <KiroOAuthWrapper
           isOpen={showOAuthModal}
           providerInfo={providerInfo}
