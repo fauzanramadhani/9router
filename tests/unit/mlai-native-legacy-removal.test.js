@@ -6,7 +6,7 @@ it('removes obsolete cloud-agent services and their production references',()=>{
   for(const file of ['open-sse/executors/mlai-code.js','open-sse/handlers/chatCore.js','open-sse/translator/index.js','src/app/api/providers/validate/route.js','src/app/api/providers/[id]/test/testUtils.js']) expect(readFileSync(file,'utf8')).not.toContain(`${name}.js`);
  }
 });
-it('documents only native OAuth and the main public route',()=>{
+it('documents native OAuth and the default public route without legacy credentials',()=>{
  for(const file of ['docs/mlai-code.md','docs/mlai-native-router.md']) {
   const text=readFileSync(file,'utf8');expect(text).toContain('mlai/main');expect(text).not.toContain('Legacy Agent API Key');expect(text).not.toContain('mlai_sk');
  }

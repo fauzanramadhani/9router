@@ -77,7 +77,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
   if (provider === "mlai-code") {
-    if (model !== "main") return createErrorResult(HTTP_STATUS.BAD_REQUEST, "ML AI Code only supports mlai/main");
+    // Model admission belongs to the native upstream, not the default catalogue.
     if (!mlaiNative) return createErrorResult(HTTP_STATUS.UNAUTHORIZED, "ML AI Code requires native device login; API keys are not supported");
   }
 

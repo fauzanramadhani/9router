@@ -24,7 +24,7 @@ it('retries full body once only on structured run_finished after status confirms
  const c={...owner(),providerSpecificData:{mlaiNative:true}};
  const body={model:'mlai/main',messages:[{role:'system',content:'complete system'},{role:'user',content:'x'.repeat(90000)}],tools:[{type:'function',function:{name:'read',parameters:{type:'object',additionalProperties:false}}}],tool_choice:'auto'};
  proxyAwareFetch.mockResolvedValueOnce(Response.json(value())).mockResolvedValueOnce(Response.json({error:{code:'run_finished'}},{status:409})).mockResolvedValueOnce(Response.json(status())).mockResolvedValueOnce(Response.json({...value(),token:'next-run'})).mockResolvedValueOnce(Response.json({choices:[{message:{content:'ok'}}]}));
- const result=await new MlaiCodeExecutor().execute({credentials:c,body});
+ const result=await new MlaiCodeExecutor().execute({credentials:c,model:'main',body});
  expect(result.response.status).toBe(200);
  expect(actions().map(a=>a.action||'inference')).toEqual(['start','inference','status','start','inference']);
  expect(actions()[1]).toEqual({...body,model:'main'});expect(actions()[4]).toEqual(actions()[1]);

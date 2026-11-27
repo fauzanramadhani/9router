@@ -11,7 +11,8 @@ export class MlaiCodeExecutor extends BaseExecutor {
   async execute({ model, body, stream, credentials, signal, proxyOptions = null }) {
     const failure = (status, message, code) => ({ response: Response.json({ error: { message: `ML AI Code: ${message}`, type: "mlai_code_error", ...(code ? { code } : {}) } }, { status }), url: this.config.baseUrl, headers: {}, transformedBody: null });
     if (credentials?.providerSpecificData?.mlaiNative !== true) return failure(401, "native device login is required; API-key connections are not supported");
-    if ((model !== undefined && model !== "main") || (body?.model !== undefined && !["main", "mlai/main", "mlai-code/main"].includes(body.model))) return failure(400, "only mlai/main is supported");
+    // Routing resolves provider prefixes/aliases before dispatch. Grant metadata is not a model override.
+    body = { ...body, model: model ?? body?.model ?? "main" };
     try {
       const grant = await getMlaiNativeGrant(credentials, { signal, proxyOptions });
       const result = await executeMlaiNativeGateway({ grant, body, stream, signal, proxyOptions });

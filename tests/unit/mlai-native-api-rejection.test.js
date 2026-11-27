@@ -35,9 +35,9 @@ it('rejects saved legacy API-key diagnosis without probing upstream',async()=>{
  expect(result.error).toContain('device login');
  expect(mocks.fetch).not.toHaveBeenCalled();
 });
-it('advertises only native OAuth and main',()=>{
+it('advertises native OAuth with the default and upstream catalogue IDs',()=>{
  expect(entry.category).toBe('oauth');expect(entry.authType).toBe('oauth');
- expect(entry.authModes).toEqual(['oauth']);expect(entry.models.map(m=>m.id)).toEqual(['main']);
+ expect(entry.authModes).toEqual(['oauth']);expect(entry.models.map(m=>m.id)).toEqual(['main','mlai-code']);
  expect(entry.transport.baseUrl).toBe('https://code.ml.ai/api/model/v1');
  expect(entry.transport).not.toHaveProperty('jobDefaults');expect(entry).not.toHaveProperty('credentialPlaceholder');
 });

@@ -3,10 +3,17 @@ vi.mock('../../open-sse/utils/proxyFetch.js',()=>({proxyAwareFetch:(...args)=>gl
 import {executeMlaiNativeGateway} from '../../open-sse/services/mlaiCodeNativeGateway.js';
 const grant={endpoint:'https://code.ml.ai/api/model/v1',token:'unit-run-token',expires:Date.now()+60000,model:'main'};
 afterEach(()=>vi.unstubAllGlobals());
-it.each(['pixis','pixis-opus','pixis-sol'])('gateway rejects removed request model %s',async model=>{
- const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
- const result=await executeMlaiNativeGateway({grant,body:{model,messages:[]}});
- expect(result.response.status).toBe(400);expect(fetch).not.toHaveBeenCalled();
+it.each(['main','mlai-code','pixis','pixis-opus','pixis-sol','future-model/vendor'])('gateway forwards exact requested model %s instead of grant metadata',async model=>{
+ for (const stream of [false,true]) {
+ const wire=stream?'data: [DONE]\n\n':JSON.stringify({choices:[]});
+ const fetch=vi.fn(async()=>new Response(wire));vi.stubGlobal('fetch',fetch);
+ const body={model,messages:[{role:'user',content:'hi'}],stream};
+ const result=await executeMlaiNativeGateway({grant:{...grant,model:'grant-routing-metadata'},body,stream});
+ expect(result.response.status).toBe(200);expect(await result.response.text()).toBe(wire);
+ expect(fetch).toHaveBeenCalledOnce();
+ expect(fetch.mock.calls[0][0]).toBe('https://code.ml.ai/api/model/v1/chat/completions');
+ expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(body);
+ }
 });
 it('forwards full native tools and transcript without task serialization or nonce emulation',async()=>{
  const body={model:'main',messages:[{role:'system',content:'S'.repeat(160000)},{role:'user',content:'build'}],tools:[{type:'function',function:{name:'create',parameters:{type:'object',additionalProperties:false}}}],tool_choice:'auto',stream:true,stream_options:{include_usage:true}};

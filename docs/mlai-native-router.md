@@ -4,7 +4,7 @@
 
 On the ML AI Code provider page, **Native Device Login** opens the native device login dialog. Complete official browser sign-in using the link. API-key connections and the cloud-agent adapter have been removed. Native sign-in stores a separate `accessToken`, `expiresAt`, and `providerSpecificData.mlaiNative: true` on the selected provider connection. It never reads, resets, imports, or changes `~/.mlai`.
 
-Use `mlai/main` for the native gateway. Removed catalogue names are rejected locally, not silently remapped to native. The native gateway uses `main`, as in the inspected official device recipe; accepting a model string is not evidence of a selectable backend.
+The default catalogue contains `mlai/main` (the inspected native default route) and `mlai/mlai-code` (`mlai-code` was the only ID in the authenticated upstream GET `/api/model/v1/models` catalogue). This is not evidence of two distinct backends. Add Model accepts arbitrary nonempty IDs for native passthrough; normal routing removes only the router provider prefix (`mlai/` or `mlai-code/`) and resolves configured aliases. The selected ID, including any remaining slashes, reaches the fixed `https://code.ml.ai/api/model/v1/chat/completions` endpoint unchanged in both streaming and nonstreaming requests. Grant model metadata never overrides it. Upstream rejection status and Retry-After are preserved with existing sanitized diagnostics and lifecycle restrictions, without a legacy fallback. Successful responses for `pixis`, `pixis-opus`, `pixis-sol` and even a nonexistent ID only establish accepted request strings, not distinct supported backends or model provenance; these names are not default catalogue entries.
 
 ## Inspected protocol (not a published API guarantee)
 

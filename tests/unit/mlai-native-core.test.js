@@ -4,10 +4,13 @@ vi.mock('../../open-sse/executors/index.js',()=>({getExecutor:()=>({execute:m.ex
 vi.mock('@/lib/usageDb.js',()=>({trackPendingRequest:vi.fn(),appendRequestLog:async()=>{},saveRequestDetail:async()=>{}}));
 vi.mock('../../open-sse/utils/requestLogger.js',()=>({createRequestLogger:async()=>new Proxy({},{get:(_target,key)=>key==='then'?undefined:()=>{}})}));
 import {handleChatCore} from '../../open-sse/handlers/chatCore.js';
-it.each(['pixis','pixis-opus','pixis-sol'])('core rejects removed model %s before executor dispatch',async model=>{
+it.each(['pixis','pixis-opus','pixis-sol','mlai-code','vendor/future'])('core forwards selected model %s without a local catalogue gate',async model=>{
  m.execute.mockClear();
- const result=await handleChatCore({body:{messages:[{role:'user',content:'hi'}]},modelInfo:{provider:'mlai-code',model},credentials:{providerSpecificData:{mlaiNative:true}}});
- expect(result.response.status).toBe(400);expect(m.execute).not.toHaveBeenCalled();
+ m.execute.mockImplementation(async({body})=>({response:Response.json({id:'test',object:'chat.completion',model,choices:[{index:0,message:{role:'assistant',content:'ok'},finish_reason:'stop'}]}),url:'https://code.ml.ai/api/model/v1/chat/completions',headers:{},transformedBody:body}));
+ const result=await handleChatCore({body:{model:'mlai/'+model,stream:false,messages:[{role:'user',content:'hi'}]},modelInfo:{provider:'mlai-code',model},credentials:{providerSpecificData:{mlaiNative:true}},sourceFormatOverride:'openai'});
+ expect(result.response.status).toBe(200);expect(m.execute).toHaveBeenCalledOnce();
+ expect(m.execute.mock.calls[0][0].model).toBe(model);
+ expect(m.execute.mock.calls[0][0].body.model).toBe(model);
 });
 it('core rejects legacy credentials before any executor dispatch',async()=>{
  m.execute.mockClear();
